@@ -398,9 +398,10 @@ void MenuModule::renderTip(RenderContext& ctx) {
              "Press any button to continue", Align::CENTER, Color::BLACK);
 }
 
-void MenuModule::showAlert(const char* message) {
+void MenuModule::showAlert(const char* message, bool hideHint) {
     // Track if alert is from external source (menu wasn't open)
     alertFromExternal = !visible;
+    alertHideHint = hideHint;
 
     alertMessage = message;
     currentView = MenuView::ALERT;
@@ -477,9 +478,11 @@ void MenuModule::renderAlert(RenderContext& ctx) {
                         ctx.width() - 2 * margin - 2 * layout->textInset(), alertMessage, Color::BLACK);
     }
 
-    // Hint at bottom
-    const char* hint = alertFromExternal ? "Click: OK" : "Click: return to menu";
-    ctx.textScaled(ctx.width() / 2, hintY, hint, Layout::hintScale, Align::CENTER, Color::BLACK);
+    // Hint at bottom (unless hidden for progress alerts)
+    if (!alertHideHint) {
+        const char* hint = alertFromExternal ? "Click: OK" : "Click: return to menu";
+        ctx.textScaled(ctx.width() / 2, hintY, hint, Layout::hintScale, Align::CENTER, Color::BLACK);
+    }
 }
 
 void MenuModule::renderShutdown(RenderContext& ctx) {
