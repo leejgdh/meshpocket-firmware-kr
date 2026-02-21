@@ -498,8 +498,11 @@ bool AdminModule::handleReceivedProtobuf(const meshtastic_MeshPacket &mp, meshta
 #ifdef FSCom
         if (r->remove_backup_preferences == meshtastic_AdminMessage_BackupLocation_FLASH) {
             spiLock->lock();
-            FSCom.remove(backupFileName);
+            FSCom.remove(autoBackupFileName);
+            FSCom.remove(autoBackupPrevFileName);
+            FSCom.remove(userBackupFileName);
             spiLock->unlock();
+            LOG_INFO("Removed all backup files (auto, auto_prev, user)");
         } else if (r->remove_backup_preferences == meshtastic_AdminMessage_BackupLocation_SD) {
             // TODO: After more mainline SD card support
             LOG_ERROR("SD backup removal not implemented yet");
