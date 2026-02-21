@@ -148,10 +148,32 @@ void setupNicheGraphics()
     };
 
     onHidePINChange = []() {
-        Serial.print(F("[Menu] Hide PIN: "));
-        Serial.println(config.bluetooth.hide_pin ? "Yes" : "No");
-        // Save config immediately so setting persists
-        nodeDB->saveToDisk();
+        bool isFixedPIN = (config.bluetooth.mode == meshtastic_Config_BluetoothConfig_PairingMode_FIXED_PIN);
+
+        if (config.bluetooth.hide_pin) {
+            // Trying to enable - only allow for Fixed PIN mode
+            if (!isFixedPIN) {
+                config.bluetooth.hide_pin = false;
+                menuModule->showAlert("Only for Fixed PIN mode");
+                return;
+            }
+            // Show "Saving..." and force render before slow save
+            Serial.println(F("[Menu] Hide PIN: Yes"));
+            menuModule->showAlert("Saving settings...", true);  // hideHint=true
+            InkHUD2::InkHUD2::instance().update();  // Force render now
+            nodeDB->saveToDisk();
+            // Show final confirmation
+            menuModule->showAlert("PIN hidden. To disable: set Random PIN in app");
+        } else {
+            // Trying to disable - block if Fixed PIN (use app instead)
+            if (isFixedPIN) {
+                config.bluetooth.hide_pin = true;
+                menuModule->showAlert("PIN hidden. To disable: set Random PIN in app");
+                return;
+            }
+            Serial.println(F("[Menu] Hide PIN: No"));
+            nodeDB->saveToDisk();
+        }
     };
 
     // Define onChange callbacks for Screen submenu
