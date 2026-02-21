@@ -39,7 +39,7 @@ public:
     void dismissTip();
 
     // Actions
-    void showAlert(const char* message);  // Show alert with "Click: return to menu"
+    void showAlert(const char* message, bool hideHint = false);  // Show alert with optional hint
     void startShutdown();                  // Show shutdown screen and trigger shutdown
 
     // Status bar data
@@ -61,6 +61,7 @@ private:
     MenuView currentView = MenuView::MENU;
     const char* alertMessage = nullptr;
     bool alertFromExternal = false;  // True if alert was shown from outside (not from menu action)
+    bool alertHideHint = false;      // True to hide "Click: return" hint (for progress alerts)
     MenuItem* rootMenu = nullptr;
     uint8_t rootMenuCount = 0;
 
