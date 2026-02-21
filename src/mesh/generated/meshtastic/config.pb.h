@@ -588,6 +588,8 @@ typedef struct _meshtastic_Config_BluetoothConfig {
     meshtastic_Config_BluetoothConfig_PairingMode mode;
     /* Specified PIN for PairingMode.FixedPin */
     uint32_t fixed_pin;
+    /* Hide PIN code on device screen during pairing */
+    bool hide_pin;
 } meshtastic_Config_BluetoothConfig;
 
 typedef PB_BYTES_ARRAY_T(32) meshtastic_Config_SecurityConfig_public_key_t;
@@ -835,6 +837,7 @@ extern "C" {
 #define meshtastic_Config_BluetoothConfig_enabled_tag 1
 #define meshtastic_Config_BluetoothConfig_mode_tag 2
 #define meshtastic_Config_BluetoothConfig_fixed_pin_tag 3
+#define meshtastic_Config_BluetoothConfig_hide_pin_tag 4
 #define meshtastic_Config_SecurityConfig_public_key_tag 1
 #define meshtastic_Config_SecurityConfig_private_key_tag 2
 #define meshtastic_Config_SecurityConfig_admin_key_tag 3
@@ -990,7 +993,8 @@ X(a, STATIC,   SINGULAR, BOOL,     config_ok_to_mqtt, 105)
 #define meshtastic_Config_BluetoothConfig_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, BOOL,     enabled,           1) \
 X(a, STATIC,   SINGULAR, UENUM,    mode,              2) \
-X(a, STATIC,   SINGULAR, UINT32,   fixed_pin,         3)
+X(a, STATIC,   SINGULAR, UINT32,   fixed_pin,         3) \
+X(a, STATIC,   SINGULAR, BOOL,     hide_pin,          4)
 #define meshtastic_Config_BluetoothConfig_CALLBACK NULL
 #define meshtastic_Config_BluetoothConfig_DEFAULT NULL
 
