@@ -1281,14 +1281,21 @@ void NodeDB::loadFromDisk()
     state = loadProto(configFileName, meshtastic_LocalConfig_size, sizeof(meshtastic_LocalConfig), &meshtastic_LocalConfig_msg,
                       &config);
     if (state != LoadFileResult::LOAD_SUCCESS) {
-        installDefaultConfig(); // Our in RAM copy might now be corrupt
-    } else {
-        if (config.version < DEVICESTATE_MIN_VER) {
-            LOG_WARN("config %d is old, discard", config.version);
-            installDefaultConfig(true);
+        // Config file corrupted or missing - try to restore from backup
+        LOG_WARN("Config load failed, attempting restore from backup...");
+        if (restorePreferences(meshtastic_AdminMessage_BackupLocation_FLASH, SEGMENT_CONFIG)) {
+            LOG_INFO("Config restored from backup successfully");
         } else {
-            LOG_INFO("Loaded saved config version %d", config.version);
+            LOG_WARN("Backup restore failed, installing defaults");
+            installDefaultConfig(); // Our in RAM copy might now be corrupt
         }
+    }
+    // Check version (applies to both loaded and restored config)
+    if (config.version < DEVICESTATE_MIN_VER) {
+        LOG_WARN("config %d is old, discard", config.version);
+        installDefaultConfig(true);
+    } else if (state == LoadFileResult::LOAD_SUCCESS) {
+        LOG_INFO("Loaded saved config version %d", config.version);
     }
 
     // Coerce LoRa config fields derived from presets while bootstrapping.
@@ -1357,27 +1364,41 @@ void NodeDB::loadFromDisk()
     state = loadProto(moduleConfigFileName, meshtastic_LocalModuleConfig_size, sizeof(meshtastic_LocalModuleConfig),
                       &meshtastic_LocalModuleConfig_msg, &moduleConfig);
     if (state != LoadFileResult::LOAD_SUCCESS) {
-        installDefaultModuleConfig(); // Our in RAM copy might now be corrupt
-    } else {
-        if (moduleConfig.version < DEVICESTATE_MIN_VER) {
-            LOG_WARN("moduleConfig %d is old, discard", moduleConfig.version);
-            installDefaultModuleConfig();
+        // Module config corrupted or missing - try to restore from backup
+        LOG_WARN("ModuleConfig load failed, attempting restore from backup...");
+        if (restorePreferences(meshtastic_AdminMessage_BackupLocation_FLASH, SEGMENT_MODULECONFIG)) {
+            LOG_INFO("ModuleConfig restored from backup successfully");
         } else {
-            LOG_INFO("Loaded saved moduleConfig version %d", moduleConfig.version);
+            LOG_WARN("Backup restore failed, installing defaults");
+            installDefaultModuleConfig(); // Our in RAM copy might now be corrupt
         }
+    }
+    // Check version (applies to both loaded and restored config)
+    if (moduleConfig.version < DEVICESTATE_MIN_VER) {
+        LOG_WARN("moduleConfig %d is old, discard", moduleConfig.version);
+        installDefaultModuleConfig();
+    } else if (state == LoadFileResult::LOAD_SUCCESS) {
+        LOG_INFO("Loaded saved moduleConfig version %d", moduleConfig.version);
     }
 
     state = loadProto(channelFileName, meshtastic_ChannelFile_size, sizeof(meshtastic_ChannelFile), &meshtastic_ChannelFile_msg,
                       &channelFile);
     if (state != LoadFileResult::LOAD_SUCCESS) {
-        installDefaultChannels(); // Our in RAM copy might now be corrupt
-    } else {
-        if (channelFile.version < DEVICESTATE_MIN_VER) {
-            LOG_WARN("channelFile %d is old, discard", channelFile.version);
-            installDefaultChannels();
+        // Channels corrupted or missing - try to restore from backup
+        LOG_WARN("Channels load failed, attempting restore from backup...");
+        if (restorePreferences(meshtastic_AdminMessage_BackupLocation_FLASH, SEGMENT_CHANNELS)) {
+            LOG_INFO("Channels restored from backup successfully");
         } else {
-            LOG_INFO("Loaded saved channelFile version %d", channelFile.version);
+            LOG_WARN("Backup restore failed, installing defaults");
+            installDefaultChannels(); // Our in RAM copy might now be corrupt
         }
+    }
+    // Check version (applies to both loaded and restored config)
+    if (channelFile.version < DEVICESTATE_MIN_VER) {
+        LOG_WARN("channelFile %d is old, discard", channelFile.version);
+        installDefaultChannels();
+    } else if (state == LoadFileResult::LOAD_SUCCESS) {
+        LOG_INFO("Loaded saved channelFile version %d", channelFile.version);
     }
 
     state = loadProto(uiconfigFileName, meshtastic_DeviceUIConfig_size, sizeof(meshtastic_DeviceUIConfig),
@@ -2151,6 +2172,10 @@ bool NodeDB::backupPreferences(meshtastic_AdminMessage_BackupLocation location)
     lastBackupAttempt = millis();
 #ifdef FSCom
     if (location == meshtastic_AdminMessage_BackupLocation_FLASH) {
+        // NOTE: Called during shutdown (MenuModule) or by AdminModule command.
+        // No concurrent access possible - shutdown is synchronous, AdminModule is single-threaded.
+        // Rotation ensures previous backup survives if write is interrupted.
+
         meshtastic_BackupPreferences backup = meshtastic_BackupPreferences_init_zero;
         backup.version = DEVICESTATE_CUR_VER;
         backup.timestamp = getValidTime(RTCQuality::RTCQualityDevice, false);
@@ -2168,16 +2193,76 @@ bool NodeDB::backupPreferences(meshtastic_AdminMessage_BackupLocation location)
 
         spiLock->lock();
         FSCom.mkdir("/backups");
+
+        // Rotation: keep previous backup as failsafe
+        // 1. Delete old _prev (if exists)
+        if (FSCom.exists(autoBackupPrevFileName)) {
+            FSCom.remove(autoBackupPrevFileName);
+        }
+        // 2. Rename current -> _prev (if exists)
+        if (FSCom.exists(autoBackupFileName)) {
+            FSCom.rename(autoBackupFileName, autoBackupPrevFileName);
+            LOG_DEBUG("Rotated auto_backup -> auto_backup_prev");
+        }
         spiLock->unlock();
-        success = saveProto(backupFileName, backupSize, &meshtastic_BackupPreferences_msg, &backup);
+
+        // 3. Write new auto_backup
+        success = saveProto(autoBackupFileName, backupSize, &meshtastic_BackupPreferences_msg, &backup);
 
         if (success) {
-            LOG_INFO("Saved backup preferences");
+            LOG_INFO("Saved auto backup (with rotation)");
+
+            // 4. If user backup exists, update it from auto backup
+            // This ensures user backup is always a safe copy of a successful auto backup
+            spiLock->lock();
+            bool userBackupExists = FSCom.exists(userBackupFileName);
+            spiLock->unlock();
+
+            if (userBackupExists) {
+                if (saveProto(userBackupFileName, backupSize, &meshtastic_BackupPreferences_msg, &backup)) {
+                    LOG_INFO("Updated USER backup from successful AUTO backup");
+                } else {
+                    LOG_WARN("Failed to update user backup - golden snapshot preserved");
+                }
+            }
         } else {
-            LOG_ERROR("Failed to save backup preferences to file");
+            LOG_ERROR("Failed to save auto backup preferences to file");
         }
     } else if (location == meshtastic_AdminMessage_BackupLocation_SD) {
         // TODO: After more mainline SD card support
+    }
+#endif
+    return success;
+}
+
+bool NodeDB::backupUserPreferences()
+{
+    bool success = false;
+#ifdef FSCom
+    meshtastic_BackupPreferences backup = meshtastic_BackupPreferences_init_zero;
+    backup.version = DEVICESTATE_CUR_VER;
+    backup.timestamp = getValidTime(RTCQuality::RTCQualityDevice, false);
+    backup.has_config = true;
+    backup.config = config;
+    backup.has_module_config = true;
+    backup.module_config = moduleConfig;
+    backup.has_channels = true;
+    backup.channels = channelFile;
+    backup.has_owner = true;
+    backup.owner = owner;
+
+    size_t backupSize;
+    pb_get_encoded_size(&backupSize, meshtastic_BackupPreferences_fields, &backup);
+
+    spiLock->lock();
+    FSCom.mkdir("/backups");
+    spiLock->unlock();
+    success = saveProto(userBackupFileName, backupSize, &meshtastic_BackupPreferences_msg, &backup);
+
+    if (success) {
+        LOG_INFO("Saved USER backup preferences (manual golden snapshot)");
+    } else {
+        LOG_ERROR("Failed to save user backup preferences to file");
     }
 #endif
     return success;
@@ -2188,43 +2273,104 @@ bool NodeDB::restorePreferences(meshtastic_AdminMessage_BackupLocation location,
     bool success = false;
 #ifdef FSCom
     if (location == meshtastic_AdminMessage_BackupLocation_FLASH) {
-        spiLock->lock();
-        if (!FSCom.exists(backupFileName)) {
-            spiLock->unlock();
-            LOG_WARN("Could not restore. No backup file found");
-            return false;
-        } else {
-            spiLock->unlock();
-        }
         meshtastic_BackupPreferences backup = meshtastic_BackupPreferences_init_zero;
-        success = loadProto(backupFileName, meshtastic_BackupPreferences_size, sizeof(meshtastic_BackupPreferences),
-                            &meshtastic_BackupPreferences_msg, &backup);
-        if (success) {
-            if (restoreWhat & SEGMENT_CONFIG) {
-                config = backup.config;
-                LOG_DEBUG("Restored config");
-            }
-            if (restoreWhat & SEGMENT_MODULECONFIG) {
-                moduleConfig = backup.module_config;
-                LOG_DEBUG("Restored module config");
-            }
-            if (restoreWhat & SEGMENT_DEVICESTATE) {
-                devicestate.owner = backup.owner;
-                LOG_DEBUG("Restored device state");
-            }
-            if (restoreWhat & SEGMENT_CHANNELS) {
-                channelFile = backup.channels;
-                LOG_DEBUG("Restored channels");
-            }
+        const char* usedBackupFile = nullptr;
+        LoadFileResult result;
 
-            success = saveToDisk(restoreWhat);
-            if (success) {
-                LOG_INFO("Restored preferences from backup");
+        // NOTE: Backup files are safe from locking during boot because NodeDB is created
+        // before any other modules/tasks. Only AdminModule can access these files later,
+        // and it runs after full boot when BLE/Serial are active.
+        //
+        // Restore priority: auto_backup (newest) -> auto_backup_prev (rotation) -> user_backup (golden)
+
+        // Try auto backup first (most recent)
+        spiLock->lock();
+        bool autoExists = FSCom.exists(autoBackupFileName);
+        spiLock->unlock();
+
+        if (autoExists) {
+            result = loadProto(autoBackupFileName, meshtastic_BackupPreferences_size, sizeof(meshtastic_BackupPreferences),
+                               &meshtastic_BackupPreferences_msg, &backup);
+            if (result == LoadFileResult::LOAD_SUCCESS) {
+                success = true;
+                usedBackupFile = autoBackupFileName;
+                LOG_INFO("Loaded AUTO backup successfully");
             } else {
-                LOG_ERROR("Failed to save restored preferences to flash");
+                LOG_WARN("Auto backup failed: %s",
+                         result == LoadFileResult::DECODE_FAILED ? "corrupted" : "read error");
             }
+        }
+
+        // Try previous auto backup (rotation failsafe)
+        if (!success) {
+            spiLock->lock();
+            bool autoPrevExists = FSCom.exists(autoBackupPrevFileName);
+            spiLock->unlock();
+
+            if (autoPrevExists) {
+                memset(&backup, 0, sizeof(backup));
+                result = loadProto(autoBackupPrevFileName, meshtastic_BackupPreferences_size, sizeof(meshtastic_BackupPreferences),
+                                   &meshtastic_BackupPreferences_msg, &backup);
+                if (result == LoadFileResult::LOAD_SUCCESS) {
+                    success = true;
+                    usedBackupFile = autoBackupPrevFileName;
+                    LOG_INFO("Loaded AUTO_PREV backup successfully (rotation failsafe)");
+                } else {
+                    LOG_WARN("Auto_prev backup failed: %s",
+                             result == LoadFileResult::DECODE_FAILED ? "corrupted" : "read error");
+                }
+            }
+        }
+
+        // Try user backup (golden snapshot - last resort)
+        if (!success) {
+            spiLock->lock();
+            bool userExists = FSCom.exists(userBackupFileName);
+            spiLock->unlock();
+
+            if (userExists) {
+                memset(&backup, 0, sizeof(backup));
+                result = loadProto(userBackupFileName, meshtastic_BackupPreferences_size, sizeof(meshtastic_BackupPreferences),
+                                   &meshtastic_BackupPreferences_msg, &backup);
+                if (result == LoadFileResult::LOAD_SUCCESS) {
+                    success = true;
+                    usedBackupFile = userBackupFileName;
+                    LOG_INFO("Loaded USER backup successfully (golden snapshot)");
+                } else {
+                    LOG_ERROR("User backup failed: %s",
+                              result == LoadFileResult::DECODE_FAILED ? "corrupted" : "read error");
+                }
+            }
+        }
+
+        if (!success) {
+            LOG_WARN("Could not restore - no valid backup files found");
+            return false;
+        }
+
+        // Apply restored data
+        if (restoreWhat & SEGMENT_CONFIG) {
+            config = backup.config;
+            LOG_DEBUG("Restored config from %s", usedBackupFile);
+        }
+        if (restoreWhat & SEGMENT_MODULECONFIG) {
+            moduleConfig = backup.module_config;
+            LOG_DEBUG("Restored module config from %s", usedBackupFile);
+        }
+        if (restoreWhat & SEGMENT_DEVICESTATE) {
+            devicestate.owner = backup.owner;
+            LOG_DEBUG("Restored device state from %s", usedBackupFile);
+        }
+        if (restoreWhat & SEGMENT_CHANNELS) {
+            channelFile = backup.channels;
+            LOG_DEBUG("Restored channels from %s", usedBackupFile);
+        }
+
+        success = saveToDisk(restoreWhat);
+        if (success) {
+            LOG_INFO("Restored preferences from %s", usedBackupFile);
         } else {
-            LOG_ERROR("Failed to restore preferences from backup file");
+            LOG_ERROR("Failed to save restored preferences to flash");
         }
     } else if (location == meshtastic_AdminMessage_BackupLocation_SD) {
         // TODO: After more mainline SD card support
