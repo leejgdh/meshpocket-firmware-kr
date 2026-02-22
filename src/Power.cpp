@@ -16,6 +16,7 @@
 #include "power.h"
 #include "MessageStore.h"
 #include "NodeDB.h"
+#include "mesh/generated/meshtastic/admin.pb.h"
 #include "PowerFSM.h"
 #include "Throttle.h"
 #include "buzz/buzz.h"
@@ -808,6 +809,10 @@ void Power::shutdown()
     playShutdownMelody();
 #endif
     nodeDB->saveToDisk();
+    // Create automatic backup on graceful shutdown
+    if (nodeDB->backupPreferences(meshtastic_AdminMessage_BackupLocation_FLASH)) {
+        LOG_INFO("Auto backup created on shutdown");
+    }
 #if HAS_SCREEN
     messageStore.saveToFlash();
 #endif
