@@ -52,6 +52,7 @@ static bool alertsEnabled[9] = {true, true, true, true, true, true, true, true, 
 // Menu actions (initialized in setupNicheGraphics)
 static std::function<void()> actionPing;
 static std::function<void()> actionBackup;
+static std::function<void()> actionRestore;
 static std::function<void()> actionShutDown;
 static std::function<void()> onHidePINChange;
 
@@ -69,7 +70,7 @@ static const uint8_t SCREEN_SUBMENU_COUNT = 3;
 
 // System submenu
 static InkHUD2::MenuItem* systemSubMenu = nullptr;
-static const uint8_t SYSTEM_SUBMENU_COUNT = 4;
+static const uint8_t SYSTEM_SUBMENU_COUNT = 5;
 
 // Alerts submenu (dynamically sized based on configured channels)
 static InkHUD2::MenuItem* alertsSubMenu = nullptr;
@@ -140,6 +141,24 @@ void setupNicheGraphics()
         // Create USER backup - survives auto-backup corruption
         nodeDB->backupUserPreferences();
         menuModule->showAlert("Golden backup saved!");
+    };
+    actionRestore = []() {
+        Serial.println(F("[Menu] Restore from backup"));
+        // Show alert immediately for user feedback
+        menuModule->showAlert("Restoring...", true);
+        InkHUD2::InkHUD2::instance().requestFullRefresh();
+        InkHUD2::InkHUD2::instance().update();
+
+        // Now do the actual restore
+        if (nodeDB->restorePreferences(meshtastic_AdminMessage_BackupLocation_FLASH)) {
+            menuModule->showAlert("Restored! Rebooting...", true);
+            InkHUD2::InkHUD2::instance().requestFullRefresh();
+            InkHUD2::InkHUD2::instance().update();
+            delay(1000);
+            rebootAtMsec = millis() + 500;
+        } else {
+            menuModule->showAlert("No backup found!");
+        }
     };
     actionShutDown = []() {
         Serial.println(F("[Menu] Shut Down"));
@@ -234,9 +253,13 @@ void setupNicheGraphics()
     systemSubMenu[2].type = InkHUD2::MenuItemType::ACTION;
     systemSubMenu[2].action = &actionBackup;
 
-    systemSubMenu[3].label = "Shut Down";
+    systemSubMenu[3].label = "Restore";
     systemSubMenu[3].type = InkHUD2::MenuItemType::ACTION;
-    systemSubMenu[3].action = &actionShutDown;
+    systemSubMenu[3].action = &actionRestore;
+
+    systemSubMenu[4].label = "Shut Down";
+    systemSubMenu[4].type = InkHUD2::MenuItemType::ACTION;
+    systemSubMenu[4].action = &actionShutDown;
 
     // Count actually configured channels (not DISABLED)
     uint8_t maxChannels = channels.getNumChannels();
