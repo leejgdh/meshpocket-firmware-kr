@@ -106,4 +106,24 @@ int16_t Footer::renderTabs(const std::vector<TabInfo>& tabs, size_t activeIndex,
     return contentBottom;
 }
 
+int16_t Footer::renderHint(const char* hint) {
+    if (!buffer || !layout || !textRenderer || !hint) {
+        return buffer ? buffer->height() : 0;
+    }
+
+    uint16_t screenH = buffer->height();
+    uint16_t hintLineH = layout->hintLineHeight();
+    uint16_t spacing = layout->elementSpacing();
+
+    // Hint position at bottom
+    int16_t hintY = screenH - hintLineH - spacing;
+    int16_t contentBottom = hintY - spacing;
+
+    // Draw centered hint text
+    int16_t centerX = buffer->width() / 2;
+    textRenderer->textScaled(centerX, hintY, hint, Layout::hintScale, Align::CENTER, Color::BLACK);
+
+    return contentBottom;
+}
+
 } // namespace InkHUD2
