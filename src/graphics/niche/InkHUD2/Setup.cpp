@@ -9,7 +9,6 @@
 #include "Modules/MenuModule.h"
 #include "Modules/MessageModule.h"
 #include "Modules/NodeListModule.h"
-#include "Modules/NotificationModule.h"
 #include "Modules/MapModule.h"
 
 #include "graphics/niche/Drivers/Backlight/LatchingBacklight.h"
@@ -34,7 +33,6 @@ namespace InkHUD2 {
 
 // Static module instances
 static BatteryModule* batteryModule = nullptr;
-static NotificationModule* notificationModule = nullptr;
 static BootModule* bootModule = nullptr;
 static MenuModule* menuModule = nullptr;
 static MessageModule* messageModule = nullptr;
@@ -98,7 +96,6 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
 
     // Create modules
     batteryModule = new BatteryModule();
-    notificationModule = new NotificationModule();
     bootModule = new BootModule();
     menuModule = new MenuModule();
     messageModule = new MessageModule();
@@ -311,7 +308,6 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
 
     // Register modules
     hud.addSystemModule(batteryModule);
-    hud.addSystemModule(notificationModule);
     hud.addSystemModule(bootModule);
     hud.addSystemModule(menuModule);
 
@@ -329,7 +325,7 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
 
     // Start events
     inkhud2Events = new Events();
-    inkhud2Events->begin(messageModule, batteryModule, nodeListModule, mapModule);
+    inkhud2Events->begin(messageModule, batteryModule, nodeListModule, mapModule, menuModule);
 
     // Backlight
     if (config.hasBacklight && config.backlightPin >= 0) {
