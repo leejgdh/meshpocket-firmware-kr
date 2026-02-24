@@ -5,6 +5,9 @@
 #include "MenuModule.h"
 #include "../Core/Logo.h"
 #include "../InkHUD2.h"  // For InkHUD2::instance()
+#include "../UI/StatusBar.h"
+#include "../UI/Footer.h"
+#include "../UI/ContentArea.h"
 #include <cstdio>
 #include <ctime>
 #include "RTC.h"
@@ -323,19 +326,26 @@ void MenuModule::renderMenu(RenderContext& ctx) {
     const Layout* layout = ctx.getLayout();
     if (!layout) return;
 
+    Buffer* buffer = ctx.getBuffer();
+    const Font* font = ctx.getFont();
+    if (!buffer || !font) return;
+
     uint16_t lineH = layout->lineHeight();
     uint16_t margin = layout->menuMargin();
 
     // Menu background
     ctx.clear();
 
+    // Create TextRenderer for UI components
+    TextRenderer textRenderer(buffer, font);
+
     // Check if we're in a submenu (stack not empty)
     bool isSubmenu = !menuStack.empty();
-    int16_t y;
+    int16_t contentTop;
 
     if (isSubmenu) {
         // Submenu: no status bar, start from top
-        y = margin + layout->elementSpacing();
+        contentTop = margin + layout->elementSpacing();
     } else {
         // Root menu: show status bar at top
         renderStatusBar(ctx);
@@ -349,18 +359,18 @@ void MenuModule::renderMenu(RenderContext& ctx) {
             ctx.pixel(x, statusBarEnd, Color::BLACK);
         }
 
-        y = statusBarEnd + layout->sectionSpacing();
+        contentTop = statusBarEnd + layout->sectionSpacing();
     }
 
-    // Calculate hint height at bottom (reserve space)
-    uint16_t hintLineH = layout->hintLineHeight();
-    int16_t hintY = ctx.height() - hintLineH - layout->elementSpacing();
+    // === Footer (hint at bottom) ===
+    Footer footer(buffer, layout, &textRenderer);
+    int16_t contentBottom = footer.renderHint("Click: Next Hold: Select");
+
+    // === Content area ===
+    ContentArea content = calculateContentArea(layout, contentTop, contentBottom);
 
     // Render menu items using MenuList
-    menuList.render(ctx, y, hintY, margin);
-
-    // Navigation hint at bottom (smallest font)
-    ctx.textScaled(ctx.width() / 2, hintY, "Click: Next Hold: Select", Layout::hintScale, Align::CENTER, Color::BLACK);
+    menuList.render(ctx, content.top(), contentBottom, margin);
 }
 
 void MenuModule::renderTip(RenderContext& ctx) {
@@ -415,6 +425,9 @@ void MenuModule::showAlert(const char* message, bool hideHint) {
 void MenuModule::startShutdown() {
     // FIRST: Show "Shutting down..." immediately for user feedback
     currentView = MenuView::SHUTDOWN;
+    visible = true;
+    active = true;
+    lockRendering = true;
     InkHUD2::instance().requestFullRefresh();
     InkHUD2::instance().update();
 
@@ -434,27 +447,57 @@ void MenuModule::startShutdown() {
     ::shutdownAtMsec = millis();
 }
 
+void MenuModule::showShutdownScreen() {
+    // Show shutdown screens without triggering shutdown
+    // Used when shutdown is initiated externally (via app)
+
+    // Show "Shutting down..." screen
+    currentView = MenuView::SHUTDOWN;
+    visible = true;
+    active = true;
+    lockRendering = true;
+    InkHUD2::instance().requestFullRefresh();
+    InkHUD2::instance().update();
+
+    // Brief pause
+    delay(300);
+
+    // Switch to final logo screen
+    currentView = MenuView::SHUTDOWN_FINAL;
+    InkHUD2::instance().requestFullRefresh();
+    InkHUD2::instance().update();
+
+    // Give display time to finish
+    delay(500);
+}
+
 void MenuModule::renderAlert(RenderContext& ctx) {
     const Layout* layout = ctx.getLayout();
     if (!layout) return;
+
+    Buffer* buffer = ctx.getBuffer();
+    const Font* font = ctx.getFont();
+    if (!buffer || !font) return;
 
     uint16_t lineH = layout->lineHeight();
     uint16_t margin = layout->menuMargin();
 
     ctx.clear();
 
+    // Create TextRenderer for UI components
+    TextRenderer textRenderer(buffer, font);
+
     int16_t contentTop;
+    int16_t contentBottom;
 
     if (alertFromExternal) {
-        // External alert (from MapModule etc.) - simple header, no status bar
-        ctx.text(ctx.width() / 2, margin, "Info", Align::CENTER, Color::BLACK);
+        // External alert (from MapModule etc.) - StatusBar with INFO icon
+        StatusBar header(buffer, layout, &textRenderer);
+        contentTop = header.render(margin, "Info", StatusBar::Icon::INFO, false);
 
-        // Dotted separator
-        int16_t sepY = margin + lineH + layout->elementSpacing();
-        for (int16_t x = margin; x < ctx.width() - margin; x += layout->dotSpacing()) {
-            ctx.pixel(x, sepY, Color::BLACK);
-        }
-        contentTop = sepY + layout->sectionSpacing() * 2;
+        // Footer hint
+        Footer footer(buffer, layout, &textRenderer);
+        contentBottom = footer.renderHint("Click: OK");
     } else {
         // Menu alert - show full status bar
         renderStatusBar(ctx);
@@ -468,20 +511,19 @@ void MenuModule::renderAlert(RenderContext& ctx) {
             ctx.pixel(x, statusBarEnd, Color::BLACK);
         }
         contentTop = statusBarEnd + layout->sectionSpacing();
+
+        // Footer hint
+        Footer footer(buffer, layout, &textRenderer);
+        contentBottom = footer.renderHint("Click: return to menu");
     }
 
-    int16_t hintY = ctx.height() - layout->hintLineHeight() - layout->elementSpacing();
+    // === Content area ===
+    ContentArea content = calculateContentArea(layout, contentTop, contentBottom);
 
     // Draw alert message (wrapped)
     if (alertMessage) {
-        ctx.textWrapped(margin + layout->textInset(), contentTop + lineH,
-                        ctx.width() - 2 * margin - 2 * layout->textInset(), alertMessage, Color::BLACK);
-    }
-
-    // Hint at bottom (unless hidden for progress alerts)
-    if (!alertHideHint) {
-        const char* hint = alertFromExternal ? "Click: OK" : "Click: return to menu";
-        ctx.textScaled(ctx.width() / 2, hintY, hint, Layout::hintScale, Align::CENTER, Color::BLACK);
+        ctx.textWrapped(content.left() + layout->textInset(), content.top() + lineH,
+                        content.w - 2 * layout->textInset(), alertMessage, Color::BLACK);
     }
 }
 
