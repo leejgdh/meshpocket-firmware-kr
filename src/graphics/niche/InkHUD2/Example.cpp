@@ -12,7 +12,6 @@
 #include "Modules/MenuModule.h"
 #include "Modules/MessageModule.h"
 #include "Modules/NodeListModule.h"
-#include "Modules/NotificationModule.h"
 
 namespace InkHUD2 {
 
@@ -55,7 +54,6 @@ void example_init() {
 
     // Create and register modules
     static BatteryModule batteryModule;
-    static NotificationModule notificationModule;
     static BootModule bootModule;
     static MessageModule messageModule;
     static NodeListModule nodeListModule;
@@ -63,7 +61,6 @@ void example_init() {
 
     // System modules (overlays)
     hud.addSystemModule(&batteryModule);
-    hud.addSystemModule(&notificationModule);
     hud.addSystemModule(&bootModule);
     hud.addSystemModule(&menuModule);
 
@@ -105,14 +102,9 @@ void example_on_button_press() {
 }
 
 void example_show_notification(const char* text) {
-    // Notifications can be accessed through the pipe
-    // Or you can keep a reference to the module
-
-    // Method 1: Direct access if you have the pointer
-    // notificationModule.show(text, 3000);
-
-    // Method 2: Through InkHUD2 event system
-    // (would require adding a custom event type)
+    // Notifications are handled by the message module
+    // when alerts are enabled for a channel
+    (void)text;  // Unused
 }
 
 // Example menu setup - MenuItem initialization requires explicit construction
