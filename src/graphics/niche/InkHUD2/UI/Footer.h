@@ -24,6 +24,10 @@ public:
     // Returns Y position of content bottom (above footer)
     int16_t renderTabs(const std::vector<TabInfo>& tabs, size_t activeIndex, bool drawSeparator = true);
 
+    // Render simple hint text at bottom (for info/alert pages)
+    // Returns Y position of content bottom (above hint)
+    int16_t renderHint(const char* hint);
+
     // Get height of footer (derived from layout)
     uint16_t height() const {
         return tabHeight() + tabSpacing();
