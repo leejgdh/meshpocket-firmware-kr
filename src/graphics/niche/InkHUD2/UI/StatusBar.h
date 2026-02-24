@@ -24,7 +24,8 @@ public:
 
     // Render status bar at top of given area
     // Returns Y position below the separator (content start)
-    int16_t render(int16_t y, const char* title, Icon icon = Icon::ENVELOPE);
+    // centered = true for alert/info pages (title centered, no icon)
+    int16_t render(int16_t y, const char* title, Icon icon = Icon::ENVELOPE, bool centered = false);
 
     // Get height of status bar (for layout calculations)
     uint16_t height() const;
