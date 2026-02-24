@@ -18,7 +18,8 @@ class MenuModule;
 // Map module states
 enum class MapState : uint8_t {
     MAP,        // Normal map view
-    SETTINGS    // Settings submenu
+    SETTINGS,   // Settings submenu
+    POSITION    // My position info with compass
 };
 
 // Node entry for map display
@@ -74,6 +75,7 @@ private:
     // Rendering methods
     void renderMap(RenderContext& ctx);
     void renderSettings(RenderContext& ctx);
+    void renderPosition(RenderContext& ctx);
 
     // Map rendering helpers
     void drawCluster(RenderContext& ctx, const MapCluster& cluster,
@@ -102,8 +104,11 @@ private:
 
     // Settings menu
     MenuList settingsMenu;
-    MenuItem settingsItems[2];  // Back, Show all nodes
+    MenuItem settingsItems[3];  // Back, My Position, Show all nodes
     void initSettingsMenu();
+
+    // Format position for alert
+    void showPositionAlert();
 
     // Own position
     int32_t ownLat = 0;
