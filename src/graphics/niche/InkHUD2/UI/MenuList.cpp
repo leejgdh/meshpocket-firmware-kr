@@ -7,16 +7,18 @@
 namespace InkHUD2 {
 
 void MenuList::selectNext() {
-    if (itemCount == 0) return;
-    selectedIndex = (selectedIndex + 1) % itemCount;
+    if (itemCount > 0) {
+        selectedIndex = (selectedIndex + 1) % itemCount;
+    }
 }
 
 void MenuList::selectPrev() {
-    if (itemCount == 0) return;
-    if (selectedIndex > 0) {
-        selectedIndex--;
-    } else {
-        selectedIndex = itemCount - 1;
+    if (itemCount > 0) {
+        if (selectedIndex > 0) {
+            selectedIndex--;
+        } else {
+            selectedIndex = itemCount - 1;
+        }
     }
 }
 
