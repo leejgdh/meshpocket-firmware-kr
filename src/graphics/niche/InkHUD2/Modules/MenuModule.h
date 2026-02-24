@@ -41,6 +41,7 @@ public:
     // Actions
     void showAlert(const char* message, bool hideHint = false);  // Show alert with optional hint
     void startShutdown();                  // Show shutdown screen and trigger shutdown
+    void showShutdownScreen();             // Just show shutdown screen (for external shutdown)
 
     // Status bar data
     void setTime(uint8_t hours, uint8_t minutes) { statusHours = hours; statusMinutes = minutes; }
