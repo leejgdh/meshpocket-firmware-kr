@@ -14,13 +14,28 @@ uint16_t StatusBar::height() const {
     return layout->lineHeight() + layout->padding() * 2;
 }
 
-int16_t StatusBar::render(int16_t y, const char* title, Icon icon) {
+int16_t StatusBar::render(int16_t y, const char* title, Icon icon, bool centered) {
     if (!buffer || !layout || !textRenderer) return y;
 
     uint16_t padding = layout->padding();
     uint16_t lineH = layout->lineHeight();
 
     int16_t headerCenterY = y + lineH / 2;
+
+    // Centered mode: just title in center, no icon
+    if (centered) {
+        uint8_t scaledTextH = static_cast<uint8_t>(lineH * TITLE_SCALE + 0.5f);
+        int16_t textY = headerCenterY - scaledTextH / 2;
+        int16_t centerX = buffer->width() / 2;
+        textRenderer->textScaled(centerX, textY, title, TITLE_SCALE, Align::CENTER, Color::BLACK);
+
+        // Separator
+        int16_t sepY = y + lineH + 2;
+        drawSeparator(sepY);
+        return sepY + 4;
+    }
+
+    // Normal mode: icon + left-aligned title
 
     // Icon dimensions
     uint8_t iconW = lineH;
