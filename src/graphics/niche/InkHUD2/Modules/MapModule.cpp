@@ -7,8 +7,11 @@
 #include "../Text/TextRenderer.h"
 #include "../UI/StatusBar.h"
 #include "../UI/ContentArea.h"
+#include "../UI/Footer.h"
+#include "../UI/Compass.h"
 #include "gps/GeoCoord.h"
 #include "NodeDB.h"
+#include "RTC.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -26,12 +29,16 @@ void MapModule::initSettingsMenu() {
     settingsItems[0].label = "< Back";
     settingsItems[0].type = MenuItemType::BACK;
 
-    // Show all nodes toggle
-    settingsItems[1].label = "Show all nodes";
-    settingsItems[1].type = MenuItemType::TOGGLE;
-    settingsItems[1].toggleValue = &showAllNodes;
+    // My position item
+    settingsItems[1].label = "My Position";
+    settingsItems[1].type = MenuItemType::ACTION;
 
-    settingsMenu.setItems(settingsItems, 2);
+    // Show all nodes toggle
+    settingsItems[2].label = "Show all nodes";
+    settingsItems[2].type = MenuItemType::TOGGLE;
+    settingsItems[2].toggleValue = &showAllNodes;
+
+    settingsMenu.setItems(settingsItems, 3);
 }
 
 void MapModule::onRender(RenderContext& ctx) {
@@ -41,6 +48,9 @@ void MapModule::onRender(RenderContext& ctx) {
             break;
         case MapState::SETTINGS:
             renderSettings(ctx);
+            break;
+        case MapState::POSITION:
+            renderPosition(ctx);
             break;
     }
 }
@@ -72,6 +82,14 @@ void MapModule::onInput(Input input) {
             }
             break;
 
+        case MapState::POSITION:
+            // Any input returns to settings
+            if (input == Input::SELECT || input == Input::BACK) {
+                state = MapState::SETTINGS;
+                requestUpdate();
+            }
+            break;
+
         case MapState::SETTINGS:
             if (input == Input::SELECT) {
                 // Short press = move to next menu item
@@ -88,6 +106,9 @@ void MapModule::onInput(Input input) {
                     handlesInput = false;
                     settingsMenu.setSelectedIndex(0);  // Reset for next time
                     requestUpdate();
+                } else if (item->type == MenuItemType::ACTION) {
+                    // "My Position" action
+                    showPositionAlert();
                 } else if (item->type == MenuItemType::TOGGLE) {
                     // Toggle handled by activateSelected
                     if (settingsMenu.activateSelected()) {
@@ -340,33 +361,28 @@ void MapModule::renderSettings(RenderContext& ctx) {
     if (!layout) return;
 
     Buffer* buffer = ctx.getBuffer();
-    if (!buffer) return;
+    const Font* font = ctx.getFont();
+    if (!buffer || !font) return;
 
-    uint16_t lineH = layout->lineHeight();
     uint16_t margin = layout->menuMargin();
 
     // Clear screen
     ctx.clear();
 
-    // === Title at top ===
-    ctx.text(ctx.width() / 2, margin, "Map Settings", Align::CENTER, Color::BLACK);
+    // Create TextRenderer for UI components
+    TextRenderer textRenderer(buffer, font);
 
-    // Dotted separator
-    int16_t sepY = margin + lineH + layout->elementSpacing();
-    for (int16_t x = margin; x < ctx.width() - margin; x += layout->dotSpacing()) {
-        buffer->setPixel(x, sepY, Color::BLACK);
-    }
+    // === Header (left-aligned with icon) ===
+    StatusBar header(buffer, layout, &textRenderer);
+    int16_t contentTop = header.render(margin, "Map Settings", StatusBar::Icon::GEAR, false);
 
-    // === Hint at bottom (reserve space) ===
-    uint16_t hintLineH = layout->hintLineHeight();
-    int16_t hintY = ctx.height() - hintLineH - layout->elementSpacing();
+    // === Footer (hint at bottom) ===
+    Footer footer(buffer, layout, &textRenderer);
+    int16_t contentBottom = footer.renderHint("Click: next  Hold: select");
 
     // === Menu items using MenuList ===
-    int16_t menuStartY = sepY + layout->sectionSpacing() * 2;
-    settingsMenu.render(ctx, menuStartY, hintY, margin);
-
-    // === Hint at bottom ===
-    ctx.textScaled(ctx.width() / 2, hintY, "Click: next  Hold: select", Layout::hintScale, Align::CENTER, Color::BLACK);
+    int16_t menuStartY = contentTop + layout->sectionSpacing();
+    settingsMenu.render(ctx, menuStartY, contentBottom, margin);
 }
 
 void MapModule::drawCluster(RenderContext& ctx, const MapCluster& cluster,
@@ -537,6 +553,125 @@ std::string MapModule::formatDistance(int32_t meters) const {
         snprintf(buf, sizeof(buf), "%ldkm", (long)(meters / 1000));
     }
     return std::string(buf);
+}
+
+void MapModule::showPositionAlert() {
+    // Use localPosition directly (global from NodeDB.h)
+    int32_t lat_i = localPosition.latitude_i;
+    int32_t lon_i = localPosition.longitude_i;
+
+    // Check if we have valid position - show alert for errors
+    if (lat_i == 0 && lon_i == 0) {
+        if (menuModule) {
+            if (config.position.gps_mode == meshtastic_Config_PositionConfig_GpsMode_NOT_PRESENT) {
+                menuModule->showAlert("No GPS module present.");
+            } else if (config.position.gps_mode != meshtastic_Config_PositionConfig_GpsMode_ENABLED) {
+                menuModule->showAlert("GPS disabled in settings.");
+            } else {
+                menuModule->showAlert("No position yet.\nWaiting for GPS update...");
+            }
+        }
+        return;
+    }
+
+    // Switch to position view state
+    state = MapState::POSITION;
+    requestUpdate();
+}
+
+void MapModule::renderPosition(RenderContext& ctx) {
+    const Layout* layout = ctx.getLayout();
+    if (!layout) return;
+
+    Buffer* buffer = ctx.getBuffer();
+    const Font* font = ctx.getFont();
+    if (!buffer || !font) return;
+
+    uint16_t lineH = layout->lineHeight();
+    uint16_t margin = layout->menuMargin();
+
+    // Clear screen
+    ctx.clear();
+
+    // Create TextRenderer for UI components
+    TextRenderer textRenderer(buffer, font);
+
+    // === Header (left-aligned with icon) ===
+    StatusBar header(buffer, layout, &textRenderer);
+    int16_t contentTop = header.render(margin, "My Position", StatusBar::Icon::MAP, false);
+
+    // === Footer (hint at bottom) ===
+    Footer footer(buffer, layout, &textRenderer);
+    int16_t contentBottom = footer.renderHint("Click: OK");
+
+    // === Position info (left side) ===
+    int32_t lat_i = localPosition.latitude_i;
+    int32_t lon_i = localPosition.longitude_i;
+
+    // Format coordinates
+    int32_t latDeg = lat_i / 10000000;
+    int32_t latFrac = (lat_i < 0 ? -lat_i : lat_i) % 10000000;
+    int32_t lonDeg = lon_i / 10000000;
+    int32_t lonFrac = (lon_i < 0 ? -lon_i : lon_i) % 10000000;
+    char latDir = lat_i >= 0 ? 'N' : 'S';
+    char lonDir = lon_i >= 0 ? 'E' : 'W';
+    int32_t alt = localPosition.altitude;
+
+    // Format "ago" string
+    uint32_t posTime = localPosition.timestamp > 0 ? localPosition.timestamp : localPosition.time;
+    char agoStr[16] = "unknown";
+    if (posTime > 0) {
+        uint32_t now = getValidTime(RTCQuality::RTCQualityDevice, true);
+        if (now > posTime) {
+            uint32_t elapsed = now - posTime;
+            if (elapsed < 60) {
+                snprintf(agoStr, sizeof(agoStr), "%lus ago", (unsigned long)elapsed);
+            } else if (elapsed < 3600) {
+                snprintf(agoStr, sizeof(agoStr), "%lum ago", (unsigned long)(elapsed / 60));
+            } else if (elapsed < 86400) {
+                snprintf(agoStr, sizeof(agoStr), "%luh ago", (unsigned long)(elapsed / 3600));
+            } else {
+                snprintf(agoStr, sizeof(agoStr), "%lud ago", (unsigned long)(elapsed / 86400));
+            }
+        } else {
+            snprintf(agoStr, sizeof(agoStr), "now");
+        }
+    }
+
+    // Draw position text
+    int16_t textX = margin + layout->textInset();
+    int16_t textY = contentTop + layout->sectionSpacing();
+    char buf[32];
+
+    snprintf(buf, sizeof(buf), "%ld.%05ld %c",
+             (long)(latDeg < 0 ? -latDeg : latDeg), (long)(latFrac / 100), latDir);
+    ctx.text(textX, textY, buf, Align::LEFT, Color::BLACK);
+    textY += lineH;
+
+    snprintf(buf, sizeof(buf), "%ld.%05ld %c",
+             (long)(lonDeg < 0 ? -lonDeg : lonDeg), (long)(lonFrac / 100), lonDir);
+    ctx.text(textX, textY, buf, Align::LEFT, Color::BLACK);
+    textY += lineH;
+
+    snprintf(buf, sizeof(buf), "Alt: %ld m", (long)alt);
+    ctx.text(textX, textY, buf, Align::LEFT, Color::BLACK);
+    textY += lineH;
+
+    ctx.text(textX, textY, agoStr, Align::LEFT, Color::BLACK);
+
+    // === Compass (right side) ===
+    int32_t headingDeg = -1;  // -1 = no heading
+    if (localPosition.has_ground_track && localPosition.ground_track > 0) {
+        headingDeg = localPosition.ground_track / 100;
+    }
+
+    // Compass position: right side, vertically centered in content area
+    uint16_t compassRadius = 28;
+    int16_t compassX = ctx.width() - margin - compassRadius - 5;
+    int16_t compassY = contentTop + (contentBottom - contentTop) / 2;
+
+    Compass compass(buffer, layout);
+    compass.render(compassX, compassY, compassRadius, headingDeg);
 }
 
 } // namespace InkHUD2
