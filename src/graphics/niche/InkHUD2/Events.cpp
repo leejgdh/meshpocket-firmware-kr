@@ -8,6 +8,7 @@
 #include "Modules/BatteryModule.h"
 #include "Modules/NodeListModule.h"
 #include "Modules/MapModule.h"
+#include "Modules/MenuModule.h"
 #include "modules/TextMessageModule.h"
 #include "NodeDB.h"
 #include "RTC.h"
@@ -48,11 +49,13 @@ static const char* getLongNameFromDB(uint32_t nodeNum) {
     return nullptr;  // No long name available
 }
 
-void Events::begin(MessageModule* msgModule, BatteryModule* batModule, NodeListModule* nodeModule, MapModule* mapMod) {
+void Events::begin(MessageModule* msgModule, BatteryModule* batModule, NodeListModule* nodeModule,
+                   MapModule* mapMod, MenuModule* menuMod) {
     messageModule = msgModule;
     batteryModule = batModule;
     nodeListModule = nodeModule;
     mapModule = mapMod;
+    menuModule = menuMod;
 
     // Set up node name callbacks
     if (messageModule) {
@@ -84,6 +87,8 @@ void Events::stop() {
     messageModule = nullptr;
     batteryModule = nullptr;
     nodeListModule = nullptr;
+    mapModule = nullptr;
+    menuModule = nullptr;
 }
 
 void Events::syncNodes() {
@@ -237,13 +242,15 @@ int Events::onNodeStatusUpdate(const meshtastic::NodeStatus* status) {
 }
 
 int Events::beforeDeepSleep(void* unused) {
+    // Show shutdown screen if menuModule is available
+    if (menuModule) {
+        menuModule->showShutdownScreen();
+    }
+
     // Save NodeDB before shutdown
     // Power::shutdown() calls doDeepSleep() with skipSaveNodeDb=true,
     // so we must save it here ourselves.
     nodeDB->saveToDisk();
-
-    // Give display time to finish if busy
-    delay(500);
 
     // Play shutdown sound
     playShutdownMelody();
