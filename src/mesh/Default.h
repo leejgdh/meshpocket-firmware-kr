@@ -4,6 +4,7 @@
 #include <meshUtils.h>
 #define ONE_DAY 24 * 60 * 60
 #define ONE_MINUTE_MS 60 * 1000
+#define TEN_MINUTES_MS 10 * 60 * 1000
 #define THIRTY_SECONDS_MS 30 * 1000
 #define TWO_SECONDS_MS 2 * 1000
 #define FIVE_SECONDS_MS 5 * 1000
