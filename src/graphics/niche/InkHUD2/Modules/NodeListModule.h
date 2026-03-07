@@ -78,6 +78,7 @@ private:
 
     // Scroll only (no selection)
     uint16_t scrollOffset = 0;
+    uint16_t visibleNodeCount = 0;  // Updated during render
 
     // Menu module for long press action
     MenuModule* menuModule = nullptr;
