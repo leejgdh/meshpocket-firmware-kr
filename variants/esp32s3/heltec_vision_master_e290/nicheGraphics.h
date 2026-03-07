@@ -17,11 +17,59 @@ Different NicheGraphics UIs and different hardware variants will each have their
 
 #ifdef MESHTASTIC_INCLUDE_NICHE_GRAPHICS
 
-// InkHUD-specific components
-// ---------------------------
-#include "graphics/niche/InkHUD/InkHUD.h"
+#include "graphics/niche/Drivers/EInk/HeltecVME290.h"
+#include "graphics/niche/Inputs/TwoButton.h"
 
-// Applets
+// ============================================================================
+// InkHUD2 - New Architecture
+// ============================================================================
+#ifdef USE_INKHUD2
+
+#include "graphics/niche/InkHUD2/Setup.h"
+
+void setupNicheGraphics()
+{
+    using namespace NicheGraphics;
+
+    Serial.println(F("[NicheGfx] setupNicheGraphics() start"));
+
+    // Power on e-ink display (VEXT controls display power on Heltec boards)
+    pinMode(VEXT_ENABLE, OUTPUT);
+    digitalWrite(VEXT_ENABLE, VEXT_ON_VALUE);
+    delay(10);  // Let power stabilize
+
+    // Initialize SPI for e-ink (HSPI)
+    SPIClass* hspi = new SPIClass(HSPI);
+    hspi->begin(PIN_EINK_SCLK, -1, PIN_EINK_MOSI, PIN_EINK_CS);
+
+    // Initialize e-ink driver (Heltec-specific: OTP LUT + correct buffer offset)
+    Drivers::EInk* driver = new Drivers::HeltecVME290;
+    driver->begin(hspi, PIN_EINK_DC, PIN_EINK_CS, PIN_EINK_BUSY, PIN_EINK_RES);
+
+    // Configure InkHUD2 (device-specific settings)
+    InkHUD2::Config config;
+    config.mainButtonPin = Inputs::TwoButton::getUserButtonPin();
+    config.mainButtonDebounce = 75;
+    config.mainButtonLongPress = 400;
+    config.auxButtonPin = PIN_BUTTON2;
+    config.hasAuxButton = true;
+    config.auxButtonDebounce = 50;
+    config.auxButtonLongPress = 1000;
+    config.hasBacklight = false;
+    config.defaultRotation = 3;  // 270 degrees - LoRa antenna up
+
+    // Initialize InkHUD2 with common setup
+    InkHUD2::setup(driver, config);
+
+    Serial.println(F("[NicheGfx] setupNicheGraphics() complete"));
+}
+
+// ============================================================================
+// InkHUD (Original Architecture)
+// ============================================================================
+#else
+
+#include "graphics/niche/InkHUD/InkHUD.h"
 #include "graphics/niche/InkHUD/Applets/User/AllMessage/AllMessageApplet.h"
 #include "graphics/niche/InkHUD/Applets/User/DM/DMApplet.h"
 #include "graphics/niche/InkHUD/Applets/User/FavoritesMap/FavoritesMapApplet.h"
@@ -29,13 +77,6 @@ Different NicheGraphics UIs and different hardware variants will each have their
 #include "graphics/niche/InkHUD/Applets/User/Positions/PositionsApplet.h"
 #include "graphics/niche/InkHUD/Applets/User/RecentsList/RecentsListApplet.h"
 #include "graphics/niche/InkHUD/Applets/User/ThreadedMessage/ThreadedMessageApplet.h"
-
-// Shared NicheGraphics components
-// --------------------------------
-#include "graphics/niche/Drivers/EInk/DEPG0290BNS800.h"
-#include "graphics/niche/Inputs/TwoButton.h"
-
-// Button feedback
 #include "buzz.h"
 
 void setupNicheGraphics()
@@ -51,9 +92,11 @@ void setupNicheGraphics()
 
     // E-Ink Driver
     // -----------------------------
+    // Use HeltecVME290 instead of DEPG0290BNS800 to fix ghosting
+    // (OTP LUT from controller memory + buffer offset 1 byte)
 
-    Drivers::EInk *driver = new Drivers::DEPG0290BNS800;
-    driver->begin(hspi, PIN_EINK_DC, PIN_EINK_CS, PIN_EINK_BUSY);
+    Drivers::EInk *driver = new Drivers::HeltecVME290;
+    driver->begin(hspi, PIN_EINK_DC, PIN_EINK_CS, PIN_EINK_BUSY, PIN_EINK_RES);
 
     // InkHUD
     // ----------------------------
@@ -113,4 +156,6 @@ void setupNicheGraphics()
     buttons->start();
 }
 
-#endif
+#endif // USE_INKHUD2
+
+#endif // MESHTASTIC_INCLUDE_NICHE_GRAPHICS
