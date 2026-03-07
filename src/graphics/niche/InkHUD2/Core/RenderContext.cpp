@@ -283,6 +283,7 @@ void RenderContext::drawGlyphBitmap(int16_t gx, int16_t gy, uint8_t width, uint8
         }
     } else {
         // Scaled rendering - nearest neighbor
+        // Note: produces poor quality for bitmap fonts, avoid using scale != 1.0
         uint8_t srcWidth = font->isCJKFont() ? 18 : width;  // Original font width
         uint8_t srcHeight = font->isCJKFont() ? 18 : height;
         uint8_t dstWidth = static_cast<uint8_t>(srcWidth * scale + 0.5f);
@@ -329,15 +330,20 @@ void RenderContext::text(int16_t x, int16_t y, const char* str, Align align, Col
         uint32_t cp = Font::decodeUTF8(ptr);
         if (cp == 0) break;
 
-        // Add spacing when transitioning from Latin/Cyrillic to CJK
+        // Add spacing when transitioning between Latin/Cyrillic and CJK
         // Latin: ASCII (0x21-0x7E) or Cyrillic (0x400-0x4FF) or Latin Extended
         bool prevIsLatin = (prevCp >= 0x21 && prevCp <= 0x7E) ||
                            (prevCp >= 0x400 && prevCp <= 0x4FF) ||
                            (prevCp >= 0xC0 && prevCp <= 0x2FF);
+        bool currIsLatin = (cp >= 0x21 && cp <= 0x7E) ||
+                           (cp >= 0x400 && cp <= 0x4FF) ||
+                           (cp >= 0xC0 && cp <= 0x2FF);
         // CJK: Hiragana, Katakana, Kanji (not fullwidth ASCII)
+        bool prevIsCJK = (prevCp >= 0x3040 && prevCp <= 0x30FF) ||
+                         (prevCp >= 0x4E00 && prevCp <= 0x9FFF);
         bool currIsCJK = (cp >= 0x3040 && cp <= 0x30FF) ||  // Hiragana + Katakana
                          (cp >= 0x4E00 && cp <= 0x9FFF);    // CJK Ideographs
-        if (prevIsLatin && currIsCJK) {
+        if ((prevIsLatin && currIsCJK) || (prevIsCJK && currIsLatin)) {
             cursorX += CJK_TRANSITION_SPACING;
         }
 
@@ -388,15 +394,20 @@ uint16_t RenderContext::textWidth(const char* str) const {
         uint32_t cp = Font::decodeUTF8(ptr);
         if (cp == 0) break;
 
-        // Add spacing when transitioning from Latin/Cyrillic to CJK
+        // Add spacing when transitioning between Latin/Cyrillic and CJK
         // Latin: ASCII (0x21-0x7E) or Cyrillic (0x400-0x4FF) or Latin Extended
         bool prevIsLatin = (prevCp >= 0x21 && prevCp <= 0x7E) ||
                            (prevCp >= 0x400 && prevCp <= 0x4FF) ||
                            (prevCp >= 0xC0 && prevCp <= 0x2FF);
+        bool currIsLatin = (cp >= 0x21 && cp <= 0x7E) ||
+                           (cp >= 0x400 && cp <= 0x4FF) ||
+                           (cp >= 0xC0 && cp <= 0x2FF);
         // CJK: Hiragana, Katakana, Kanji (not fullwidth ASCII)
+        bool prevIsCJK = (prevCp >= 0x3040 && prevCp <= 0x30FF) ||
+                         (prevCp >= 0x4E00 && prevCp <= 0x9FFF);
         bool currIsCJK = (cp >= 0x3040 && cp <= 0x30FF) ||  // Hiragana + Katakana
                          (cp >= 0x4E00 && cp <= 0x9FFF);    // CJK Ideographs
-        if (prevIsLatin && currIsCJK) {
+        if ((prevIsLatin && currIsCJK) || (prevIsCJK && currIsLatin)) {
             totalW += CJK_TRANSITION_SPACING;
         }
 
@@ -475,9 +486,25 @@ void RenderContext::textScaled(int16_t x, int16_t y, const char* str, float scal
     int16_t cursorY = clipY + y + scaledAscent;
 
     const char* ptr = str;
+    uint32_t prevCp = 0;
     while (*ptr) {
         uint32_t cp = Font::decodeUTF8(ptr);
         if (cp == 0) break;
+
+        // Add spacing when transitioning between Latin/Cyrillic and CJK
+        bool prevIsLatin = (prevCp >= 0x21 && prevCp <= 0x7E) ||
+                           (prevCp >= 0x400 && prevCp <= 0x4FF) ||
+                           (prevCp >= 0xC0 && prevCp <= 0x2FF);
+        bool currIsLatin = (cp >= 0x21 && cp <= 0x7E) ||
+                           (cp >= 0x400 && cp <= 0x4FF) ||
+                           (cp >= 0xC0 && cp <= 0x2FF);
+        bool prevIsCJK = (prevCp >= 0x3040 && prevCp <= 0x30FF) ||
+                         (prevCp >= 0x4E00 && prevCp <= 0x9FFF);
+        bool currIsCJK = (cp >= 0x3040 && cp <= 0x30FF) ||
+                         (cp >= 0x4E00 && cp <= 0x9FFF);
+        if ((prevIsLatin && currIsCJK) || (prevIsCJK && currIsLatin)) {
+            cursorX += static_cast<int16_t>(CJK_TRANSITION_SPACING * scale + 0.5f);
+        }
 
         int16_t glyphIndex = font->findGlyphIndex(cp);
 
@@ -489,6 +516,7 @@ void RenderContext::textScaled(int16_t x, int16_t y, const char* str, float scal
             glyphIndex = font->findGlyphIndex('?');
         }
         if (glyphIndex < 0) {
+            prevCp = cp;
             continue;
         }
 
@@ -498,6 +526,7 @@ void RenderContext::textScaled(int16_t x, int16_t y, const char* str, float scal
         int8_t yOffset;
 
         if (!font->getGlyphInfo(glyphIndex, bitmapOffset, glyphW, glyphH, yOffset, xAdvance)) {
+            prevCp = cp;
             continue;
         }
 
@@ -513,6 +542,7 @@ void RenderContext::textScaled(int16_t x, int16_t y, const char* str, float scal
         }
 
         cursorX += scaledXAdvance;
+        prevCp = cp;
     }
 }
 
@@ -521,10 +551,26 @@ uint16_t RenderContext::textWidthScaled(const char* str, float scale) const {
 
     uint16_t totalW = 0;
     const char* ptr = str;
+    uint32_t prevCp = 0;
 
     while (*ptr) {
         uint32_t cp = Font::decodeUTF8(ptr);
         if (cp == 0) break;
+
+        // Add spacing when transitioning between Latin/Cyrillic and CJK
+        bool prevIsLatin = (prevCp >= 0x21 && prevCp <= 0x7E) ||
+                           (prevCp >= 0x400 && prevCp <= 0x4FF) ||
+                           (prevCp >= 0xC0 && prevCp <= 0x2FF);
+        bool currIsLatin = (cp >= 0x21 && cp <= 0x7E) ||
+                           (cp >= 0x400 && cp <= 0x4FF) ||
+                           (cp >= 0xC0 && cp <= 0x2FF);
+        bool prevIsCJK = (prevCp >= 0x3040 && prevCp <= 0x30FF) ||
+                         (prevCp >= 0x4E00 && prevCp <= 0x9FFF);
+        bool currIsCJK = (cp >= 0x3040 && cp <= 0x30FF) ||
+                         (cp >= 0x4E00 && cp <= 0x9FFF);
+        if ((prevIsLatin && currIsCJK) || (prevIsCJK && currIsLatin)) {
+            totalW += static_cast<uint16_t>(CJK_TRANSITION_SPACING * scale + 0.5f);
+        }
 
         int16_t glyphIndex = font->findGlyphIndex(cp);
         if (glyphIndex < 0) {
@@ -533,7 +579,10 @@ uint16_t RenderContext::textWidthScaled(const char* str, float scale) const {
         if (glyphIndex < 0) {
             glyphIndex = font->findGlyphIndex('?');
         }
-        if (glyphIndex < 0) continue;
+        if (glyphIndex < 0) {
+            prevCp = cp;
+            continue;
+        }
 
         // Get actual xAdvance from glyph
         uint32_t bitmapOffset;
@@ -543,6 +592,7 @@ uint16_t RenderContext::textWidthScaled(const char* str, float scale) const {
         if (font->getGlyphInfo(glyphIndex, bitmapOffset, w, h, yOffset, xAdvance)) {
             totalW += static_cast<uint8_t>(xAdvance * scale + 0.5f);
         }
+        prevCp = cp;
     }
 
     return totalW;
@@ -574,6 +624,7 @@ uint16_t RenderContext::textWrapped(int16_t x, int16_t y, uint16_t maxW, const c
     int16_t cursorX = x;
     int16_t cursorY = y;
     bool prevWasLatin = false;  // Track script transitions
+    bool prevWasCJK = false;
 
     const char* ptr = str;
 
@@ -640,7 +691,13 @@ uint16_t RenderContext::textWrapped(int16_t x, int16_t y, uint16_t maxW, const c
             }
             cursorX += xAdvance;
             prevWasLatin = false;
+            prevWasCJK = true;
         } else {
+            // Add spacing when transitioning from CJK to Latin
+            if (prevWasCJK && cursorX > x) {
+                cursorX += CJK_TRANSITION_SPACING;
+            }
+
             // Non-CJK: find end of word
             const char* wordEnd = ptr;  // Already advanced past first char
             uint16_t wordWidth = xAdvance;
@@ -712,6 +769,7 @@ uint16_t RenderContext::textWrapped(int16_t x, int16_t y, uint16_t maxW, const c
                 }
             }
             prevWasLatin = true;
+            prevWasCJK = false;
         }
     }
 
@@ -773,6 +831,7 @@ uint16_t RenderContext::textWrappedTruncated(int16_t x, int16_t y, uint16_t maxW
     int16_t cursorY = y;
     int16_t maxY = y + maxH - lineH;  // Last line that fully fits
     bool prevWasLatin = false;
+    bool prevWasCJK = false;
 
     const char* ptr = str;
 
@@ -857,7 +916,13 @@ uint16_t RenderContext::textWrappedTruncated(int16_t x, int16_t y, uint16_t maxW
             }
             cursorX += xAdvance;
             prevWasLatin = false;
+            prevWasCJK = true;
         } else {
+            // Add spacing when transitioning from CJK to Latin
+            if (prevWasCJK && cursorX > x) {
+                cursorX += CJK_TRANSITION_SPACING;
+            }
+
             // Non-CJK: find word
             const char* wordEnd = ptr;
             uint16_t wordWidth = xAdvance;
@@ -982,6 +1047,7 @@ uint16_t RenderContext::textWrappedTruncated(int16_t x, int16_t y, uint16_t maxW
                 }
             }
             prevWasLatin = true;
+            prevWasCJK = false;
         }
     }
 
@@ -995,6 +1061,7 @@ uint16_t RenderContext::getWrappedTextHeight(uint16_t maxW, const char* str) con
     int16_t cursorX = 0;
     uint16_t totalH = lineH;  // At least one line
     bool prevWasLatin = false;  // Track script transitions
+    bool prevWasCJK = false;
 
     const char* ptr = str;
 
@@ -1052,7 +1119,13 @@ uint16_t RenderContext::getWrappedTextHeight(uint16_t maxW, const char* str) con
             }
             cursorX += xAdvance;
             prevWasLatin = false;
+            prevWasCJK = true;
         } else {
+            // Add spacing when transitioning from CJK to Latin
+            if (prevWasCJK && cursorX > 0) {
+                cursorX += CJK_TRANSITION_SPACING;
+            }
+
             // Non-CJK: find end of word
             const char* wordEnd = ptr;
             uint16_t wordWidth = xAdvance;
@@ -1108,6 +1181,7 @@ uint16_t RenderContext::getWrappedTextHeight(uint16_t maxW, const char* str) con
                 ptr = wordEnd;
             }
             prevWasLatin = true;
+            prevWasCJK = false;
         }
     }
 

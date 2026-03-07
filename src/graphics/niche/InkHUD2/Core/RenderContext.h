@@ -7,8 +7,8 @@
 
 namespace InkHUD2 {
 
-// Spacing between Latin/Cyrillic and CJK text
-constexpr uint8_t CJK_TRANSITION_SPACING = 4;
+// Spacing between Latin/Cyrillic and CJK text (bidirectional)
+constexpr uint8_t CJK_TRANSITION_SPACING = 2;
 
 enum class Align : uint8_t {
     LEFT,
