@@ -1893,9 +1893,9 @@ bool NodeDB::updateUser(uint32_t nodeId, meshtastic_User &p, uint8_t channelInde
         notifyObservers(true); // Force an update whether or not our node counts have changed
 
         // We just changed something about a User,
-        // store our DB unless we just did so less than a minute ago
+        // store our DB unless we just did so less than 10 minutes ago (flash wear protection)
 
-        if (!Throttle::isWithinTimespanMs(lastNodeDbSave, ONE_MINUTE_MS)) {
+        if (!Throttle::isWithinTimespanMs(lastNodeDbSave, TEN_MINUTES_MS)) {
             saveToDisk(SEGMENT_NODEDATABASE);
             lastNodeDbSave = millis();
         } else {
