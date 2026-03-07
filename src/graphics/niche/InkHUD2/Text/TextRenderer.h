@@ -28,12 +28,15 @@ public:
     // === Wrapped text ===
     // Returns height used
     uint16_t textWrapped(int16_t x, int16_t y, uint16_t maxW, const char* str, Color c = Color::BLACK);
+    uint16_t textWrappedScaled(int16_t x, int16_t y, uint16_t maxW, const char* str, float scale, Color c = Color::BLACK);
 
     // Wrapped with height limit - truncates with "..." if too long
     uint16_t textWrappedTruncated(int16_t x, int16_t y, uint16_t maxW, uint16_t maxH, const char* str, Color c = Color::BLACK);
+    uint16_t textWrappedTruncatedScaled(int16_t x, int16_t y, uint16_t maxW, uint16_t maxH, const char* str, float scale, Color c = Color::BLACK);
 
     // Calculate wrapped text height without rendering
     uint16_t getWrappedTextHeight(uint16_t maxW, const char* str) const;
+    uint16_t getWrappedTextHeightScaled(uint16_t maxW, const char* str, float scale) const;
 
     // === Font access ===
     const Font* getFont() const { return font; }
@@ -56,7 +59,7 @@ private:
     uint16_t clipW, clipH;
 
     // Latin→CJK spacing constant
-    static constexpr uint8_t SCRIPT_TRANSITION_SPACING = 4;
+    static constexpr uint8_t SCRIPT_TRANSITION_SPACING = 2;
 };
 
 } // namespace InkHUD2
