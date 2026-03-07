@@ -43,8 +43,9 @@ static Events* inkhud2Events = nullptr;
 // Menu state
 static bool gpsEnabled = true;
 static bool backlightOn = false;
-static uint8_t rotationIndex = 0;
-static const char* rotationOptions[] = {"0", "90", "180", "270"};
+static const char* rotationOptions4[] = {"0", "90", "180", "270"};  // For square-ish screens
+static const char* rotationOptions2[] = {"0", "180"};               // For elongated screens
+static bool isElongatedScreen = false;  // Set in setup() based on aspect ratio
 
 // Alerts state (index 0-7 = channels, 8 = DM)
 static bool alertsEnabled[9] = {true, true, true, true, true, true, true, true, true};
@@ -87,9 +88,18 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
     // Create adapter
     static EInkAdapter* adapter = new EInkAdapter(driver);
 
-    // Initialize InkHUD2
+    // Determine if screen is elongated (aspect ratio > 1.5)
+    uint16_t maxDim = std::max(driver->width, driver->height);
+    uint16_t minDim = std::min(driver->width, driver->height);
+    isElongatedScreen = (minDim > 0) && (maxDim * 10 / minDim > 15);  // >1.5 ratio
+
+    // Initialize InkHUD2 with standard 18px font
+    // Apply saved rotation offset to default rotation
+    uint8_t savedRotation = Settings::instance().getRotation();
+    uint8_t initialRotation = (savedRotation + config.defaultRotation) % 4;
+
     InkHUD2& hud = InkHUD2::instance();
-    if (!hud.init(adapter, &NicheGraphics::UnifiedFont18px)) {
+    if (!hud.init(adapter, &NicheGraphics::UnifiedFont18px, initialRotation, 1.0f)) {
         Serial.println(F("[InkHUD2] ERROR: init() failed!"));
         return;
     }
@@ -164,19 +174,26 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
     };
 
     onBacklightChange = []() {
-        if (currentConfig.hasBacklight) {
-            Drivers::LatchingBacklight* bl = Drivers::LatchingBacklight::getInstance();
-            if (backlightOn) {
-                bl->latch();
-            } else {
-                bl->off();
-            }
+        if (!currentConfig.hasBacklight) {
+            backlightOn = false;  // Reset toggle
+            menuModule->showAlert("No backlight on this device");
+            return;
+        }
+        Drivers::LatchingBacklight* bl = Drivers::LatchingBacklight::getInstance();
+        if (backlightOn) {
+            bl->latch();
+        } else {
+            bl->off();
         }
     };
 
     onRotationChange = []() {
+        // rotationIndex maps directly: 0=0°, 1=90°, 2=180°, 3=270°
+        uint8_t rotationIndex = Settings::instance().getRotation();
         uint8_t bufferRotation = (rotationIndex + currentConfig.defaultRotation) % 4;
         InkHUD2::instance().setRotation(bufferRotation);
+        // Save to persistent storage
+        Settings::instance().save();
     };
 
     // Create Screen submenu
@@ -191,8 +208,8 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
 
     screenSubMenu[2].label = "Rotation";
     screenSubMenu[2].type = MenuItemType::VALUE;
-    screenSubMenu[2].value.options = rotationOptions;
-    screenSubMenu[2].value.currentIndex = &rotationIndex;
+    screenSubMenu[2].value.options = rotationOptions4;
+    screenSubMenu[2].value.currentIndex = Settings::instance().rotationPtr();
     screenSubMenu[2].value.optionCount = 4;
     screenSubMenu[2].onChange = &onRotationChange;
 
@@ -348,12 +365,24 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
     }
 
     if (config.hasAuxButton && config.auxButtonPin >= 0) {
-        Drivers::LatchingBacklight* backlight = Drivers::LatchingBacklight::getInstance();
         buttons->setWiring(1, config.auxButtonPin);
         buttons->setTiming(1, config.auxButtonDebounce, config.auxButtonLongPress);
-        buttons->setHandlerDown(1, [backlight]() { backlight->peek(); });
-        buttons->setHandlerLongPress(1, [backlight]() { backlight->latch(); });
-        buttons->setHandlerShortPress(1, [backlight]() { backlight->off(); });
+
+        if (config.hasBacklight) {
+            // Backlight control
+            Drivers::LatchingBacklight* backlight = Drivers::LatchingBacklight::getInstance();
+            buttons->setHandlerDown(1, [backlight]() { backlight->peek(); });
+            buttons->setHandlerLongPress(1, [backlight]() { backlight->latch(); });
+            buttons->setHandlerShortPress(1, [backlight]() { backlight->off(); });
+        } else {
+            // Scroll control (short = down, long = top)
+            buttons->setHandlerShortPress(1, []() {
+                InkHUD2::instance().onInput(Input::DOWN);
+            });
+            buttons->setHandlerLongPress(1, []() {
+                InkHUD2::instance().onInput(Input::UP);
+            });
+        }
     }
 
     buttons->start();
