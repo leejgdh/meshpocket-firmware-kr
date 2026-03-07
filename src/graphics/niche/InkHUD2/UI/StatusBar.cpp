@@ -3,6 +3,8 @@
 * PVS-Studio Static Code Analyzer for C, C++, C#, and Java: https://pvs-studio.com
 */
 #include "StatusBar.h"
+#include "TextUtils.h"
+#include <cstring>
 
 namespace InkHUD2 {
 
@@ -64,11 +66,19 @@ int16_t StatusBar::render(int16_t y, const char* title, Icon icon, bool centered
             break;
     }
 
-    // Title text
+    // Title text - limit width to not overlap battery
     int16_t textX = (icon != Icon::NONE) ? (padding + iconW + padding) : padding;
     uint8_t scaledTextH = static_cast<uint8_t>(lineH * TITLE_SCALE + 0.5f);
     int16_t textY = headerCenterY - scaledTextH / 2;
-    textRenderer->textScaled(textX, textY, title, TITLE_SCALE, Align::LEFT, Color::BLACK);
+
+    // Calculate max width for title (leave space for battery)
+    Rect batRect = layout->batteryRect();
+    uint16_t maxTitleW = batRect.x - textX - padding;
+
+    // Truncate title if needed
+    char truncBuf[64];
+    TextUtils::truncate(textRenderer, title, maxTitleW, TITLE_SCALE, truncBuf, sizeof(truncBuf));
+    textRenderer->textScaled(textX, textY, truncBuf, TITLE_SCALE, Align::LEFT, Color::BLACK);
 
     // Separator
     int16_t sepY = y + lineH + 2;

@@ -4,6 +4,7 @@
 */
 #include "Compass.h"
 #include "../Text/TextRenderer.h"
+#include <algorithm>
 #include <cmath>
 
 namespace InkHUD2 {
@@ -18,18 +19,19 @@ void Compass::render(int16_t cx, int16_t cy, uint16_t radius, int32_t headingDeg
     drawCircle(cx, cy, radius);
 
     // Draw N marker at top
-    // Simple "N" using pixels
-    int16_t nY = cy - radius - 2;
+    // Simple "N" using pixels - size proportional to radius
+    int16_t nGap = std::max(1, static_cast<int>(radius / 14));  // ~2 for r=28
+    int16_t nY = cy - radius - nGap;
     int16_t nX = cx;
 
-    // Draw a simple N (5 pixels wide, 5 tall)
+    // Draw a simple N proportional to radius (~14% width, ~18% height)
     // |   |
     // |\  |
     // | \ |
     // |  \|
     // |   |
-    int16_t nW = 4;
-    int16_t nH = 5;
+    int16_t nW = std::max(3, static_cast<int>(radius * 4 / 28));  // 4 for r=28
+    int16_t nH = std::max(4, static_cast<int>(radius * 5 / 28));  // 5 for r=28
     int16_t nLeft = nX - nW / 2;
     int16_t nTop = nY - nH;
 
@@ -95,13 +97,17 @@ void Compass::drawArrow(int16_t cx, int16_t cy, uint16_t radius, int32_t heading
     // So 0 degrees (North) = -90 in standard math coords
     float rad = (headingDeg - 90) * 3.14159f / 180.0f;
 
+    // Proportional dimensions based on radius
+    int16_t tipMargin = std::max(2, static_cast<int>(radius * 3 / 28));   // ~11% of radius
+    int16_t baseDist = std::max(3, static_cast<int>(radius * 6 / 28));    // ~21% of radius
+
     // Arrow tip at edge of circle (with small margin)
-    int16_t tipX = cx + static_cast<int16_t>((radius - 3) * cosf(rad));
-    int16_t tipY = cy + static_cast<int16_t>((radius - 3) * sinf(rad));
+    int16_t tipX = cx + static_cast<int16_t>((radius - tipMargin) * cosf(rad));
+    int16_t tipY = cy + static_cast<int16_t>((radius - tipMargin) * sinf(rad));
 
     // Arrow base (near center)
-    int16_t baseX = cx + static_cast<int16_t>(6 * cosf(rad));
-    int16_t baseY = cy + static_cast<int16_t>(6 * sinf(rad));
+    int16_t baseX = cx + static_cast<int16_t>(baseDist * cosf(rad));
+    int16_t baseY = cy + static_cast<int16_t>(baseDist * sinf(rad));
 
     // Draw arrow shaft using Bresenham's line algorithm
     int16_t dx = tipX > baseX ? tipX - baseX : baseX - tipX;
@@ -122,7 +128,7 @@ void Compass::drawArrow(int16_t cx, int16_t cy, uint16_t radius, int32_t heading
     // Draw arrowhead (two short lines from tip)
     float headAngle1 = rad + 2.5f;  // ~143 degrees offset
     float headAngle2 = rad - 2.5f;
-    int16_t headLen = 6;
+    int16_t headLen = std::max(4, static_cast<int>(radius * 6 / 28));  // ~21% of radius
 
     int16_t h1x = tipX - static_cast<int16_t>(headLen * cosf(rad - 0.5f));
     int16_t h1y = tipY - static_cast<int16_t>(headLen * sinf(rad - 0.5f));

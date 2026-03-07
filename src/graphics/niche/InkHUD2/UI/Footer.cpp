@@ -3,7 +3,9 @@
 * PVS-Studio Static Code Analyzer for C, C++, C#, and Java: https://pvs-studio.com
 */
 #include "Footer.h"
+#include "TextUtils.h"
 #include <cstdio>
+#include <cstring>
 
 namespace InkHUD2 {
 
@@ -39,7 +41,7 @@ int16_t Footer::renderTabs(const std::vector<TabInfo>& tabs, size_t activeIndex,
 
     // Tab dimensions (dynamic)
     uint16_t tabW = tabSize();
-    uint16_t tabGap = 2;  // Gap between tabs
+    uint16_t tabGap = layout->tabGap();
 
     int16_t tabsStartX = padding;
 
@@ -100,7 +102,15 @@ int16_t Footer::renderTabs(const std::vector<TabInfo>& tabs, size_t activeIndex,
         }
 
         snprintf(displayName, sizeof(displayName), "%c%s", prefix, name);
-        textRenderer->textScaled(nameX, nameY, displayName, TEXT_SCALE, Align::RIGHT, Color::BLACK);
+
+        // Calculate max width (don't overlap tabs)
+        int16_t tabsEndX = tabsStartX + tabs.size() * (tabW + tabGap);
+        uint16_t maxNameW = nameX - tabsEndX - padding;
+
+        // Truncate if needed
+        char truncBuf[32];
+        TextUtils::truncate(textRenderer, displayName, maxNameW, TEXT_SCALE, truncBuf, sizeof(truncBuf));
+        textRenderer->textScaled(nameX, nameY, truncBuf, TEXT_SCALE, Align::RIGHT, Color::BLACK);
     }
 
     return contentBottom;
@@ -111,19 +121,33 @@ int16_t Footer::renderHint(const char* hint) {
         return buffer ? buffer->height() : 0;
     }
 
+    uint16_t screenW = buffer->width();
     uint16_t screenH = buffer->height();
     uint16_t hintLineH = layout->hintLineHeight();
     uint16_t spacing = layout->elementSpacing();
+    float scale = layout->effectiveHintScale();
 
-    // Hint position at bottom
-    int16_t hintY = screenH - hintLineH - spacing;
-    int16_t contentBottom = hintY - spacing;
+    // Check if hint fits on one line
+    uint16_t hintWidth = textRenderer->textWidthScaled(hint, scale);
+    uint16_t margin = layout->margin();
 
-    // Draw centered hint text
-    int16_t centerX = buffer->width() / 2;
-    textRenderer->textScaled(centerX, hintY, hint, Layout::hintScale, Align::CENTER, Color::BLACK);
-
-    return contentBottom;
+    if (hintWidth <= screenW - 2 * margin) {
+        // Single line
+        int16_t hintY = screenH - hintLineH - spacing;
+        int16_t centerX = screenW / 2;
+        textRenderer->textScaled(centerX, hintY, hint, scale, Align::CENTER, Color::BLACK);
+        return hintY - spacing;
+    } else {
+        // Two lines for vertical mode - split at space before "Hold"
+        const char* line1 = "Click: Next";
+        const char* line2 = "Hold: Select";
+        int16_t line2Y = screenH - hintLineH - spacing;
+        int16_t line1Y = line2Y - hintLineH;
+        int16_t centerX = screenW / 2;
+        textRenderer->textScaled(centerX, line1Y, line1, scale, Align::CENTER, Color::BLACK);
+        textRenderer->textScaled(centerX, line2Y, line2, scale, Align::CENTER, Color::BLACK);
+        return line1Y - spacing;
+    }
 }
 
 } // namespace InkHUD2

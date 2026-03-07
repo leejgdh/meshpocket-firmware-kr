@@ -42,7 +42,8 @@ private:
     const Layout* layout;
     TextRenderer* textRenderer;
 
-    // Scale for title text
+public:
+    // Scale for title text (public for HeaderText calculations)
     static constexpr float TITLE_SCALE = 0.78f;
 };
 
