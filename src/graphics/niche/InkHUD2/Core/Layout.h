@@ -33,6 +33,7 @@ public:
     static constexpr float smallScale = 0.78f;   // ~14px on 200x200
     static constexpr float menuScale = 0.89f;    // ~16px on 200x200
     static constexpr float hintScale = 0.78f;    // ~14px on 200x200
+    static constexpr float verticalScale = 0.89f; // ~16px - smaller font for vertical mode
 
     // ========================================================================
     // Base values (for REFERENCE_SIZE, scaled dynamically)
@@ -60,11 +61,19 @@ public:
     Layout(uint16_t screenW, uint16_t screenH, const Font* font)
         : screenW(screenW), screenH(screenH), font(font)
     {
-        // Calculate scale factor based on smaller dimension
+        // Check if screen is elongated (aspect ratio > 1.5)
+        uint16_t maxDim = std::max(screenW, screenH);
         uint16_t minDim = std::min(screenW, screenH);
-        // Clamp to prevent too small scaling
-        minDim = std::max(minDim, MIN_DIMENSION);
-        scaleFactor = static_cast<float>(minDim) / static_cast<float>(REFERENCE_SIZE);
+        bool isElongated = (minDim > 0) && (maxDim * 10 / minDim > 15);
+
+        if (isElongated) {
+            // For elongated screens: no scaling, use reference size values directly
+            scaleFactor = 1.0f;
+        } else {
+            // For square-ish screens: scale based on smaller dimension
+            minDim = std::max(minDim, MIN_DIMENSION);
+            scaleFactor = static_cast<float>(minDim) / static_cast<float>(REFERENCE_SIZE);
+        }
     }
 
     // ========================================================================
@@ -86,6 +95,18 @@ public:
     uint16_t height() const { return screenH; }
     bool isWideScreen() const { return screenW > screenH * 1.5f; }
     bool isSquareScreen() const { return screenW == screenH; }
+    bool isVertical() const { return screenH > screenW * 1.5f; }  // Tall narrow screen
+    bool isNarrow() const { return screenW < 150; }  // Very narrow (e.g., 128px)
+
+    // Effective scale for text - smaller in vertical mode
+    float effectiveScale(float baseScale) const {
+        return isVertical() ? baseScale * verticalScale : baseScale;
+    }
+
+    // Effective menu scale (for vertical mode)
+    float effectiveMenuScale() const { return effectiveScale(menuScale); }
+    float effectiveSmallScale() const { return effectiveScale(smallScale); }
+    float effectiveHintScale() const { return effectiveScale(hintScale); }
 
     // ========================================================================
     // Font metrics (from font, with scaling for fallback)
@@ -193,9 +214,8 @@ public:
     }
 
     uint16_t batteryHeight() const {
-        uint16_t h = lineHeight();
-        uint16_t reduction = scaled(4, 2);
-        return h > reduction ? h - reduction : h / 2;
+        // 3/4 of line height - matches envelope icon visual size
+        return lineHeight() * 3 / 4;
     }
 
     uint16_t batteryBumpWidth() const {
@@ -337,6 +357,22 @@ public:
         return lineHeight() / 2 + 1;
     }
 
+    uint16_t tabGap() const {
+        return scaled(2, 1);
+    }
+
+    // ========================================================================
+    // Compass (scaled)
+    // ========================================================================
+
+    uint16_t compassRadius() const {
+        return scaled(28, 14);
+    }
+
+    uint16_t compassMargin() const {
+        return scaled(5, 2);
+    }
+
     // ========================================================================
     // Screen Regions
     // ========================================================================
@@ -362,11 +398,13 @@ public:
     }
 
     // Battery icon position (top-right, vertically centered in header)
+    // Must match StatusBar icon positioning: y = padding + lineH/2 - iconH/2
     Rect batteryRect() const {
-        int16_t headerCenterY = margin() + padding() + lineHeight() / 2;
-        int16_t batteryY = headerCenterY - batteryHeight() / 2;
+        Rect content = contentArea();
+        // Same formula as StatusBar: y + lineH/2 - height/2, where y = padding
+        int16_t batteryY = content.y + padding() + lineHeight() / 2 - batteryHeight() / 2;
         return {
-            static_cast<int16_t>(screenW - margin() - batteryWidth()),
+            static_cast<int16_t>(content.x + content.w - batteryWidth()),
             batteryY,
             batteryWidth(),
             batteryHeight()
