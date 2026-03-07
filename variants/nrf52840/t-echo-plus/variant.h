@@ -134,6 +134,11 @@ static const uint8_t A0 = PIN_A0;
 
 #define SERIAL_PRINT_PORT 0
 
+// Custom OCV curve for battery level estimation
+// Minimum 3400mV to ensure board stability (DC-DC, e-ink, peripherals)
+// See docs/OCV_CURVE.md for details
+#define OCV_ARRAY 4190, 4050, 3990, 3890, 3800, 3720, 3630, 3530, 3480, 3440, 3400
+
 #ifdef __cplusplus
 }
 #endif
