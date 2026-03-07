@@ -33,12 +33,16 @@ public:
     // Sync nodes from NodeDB (call periodically or on demand)
     void syncNodes();
 
+    // Called periodically from InkHUD2::runOnce() to handle delayed operations
+    void tick();
+
 private:
     // Observer callbacks
     int onReceiveTextMessage(const meshtastic_MeshPacket* packet);
     int onPowerStatusUpdate(const meshtastic::Status* status);
     int onNodeStatusUpdate(const meshtastic::NodeStatus* status);
     int beforeDeepSleep(void* unused);
+    int beforeReboot(void* unused);
 
     // Observers
     CallbackObserver<Events, const meshtastic_MeshPacket*> textMessageObserver =
@@ -53,6 +57,10 @@ private:
     // Get notified when the system is shutting down
     CallbackObserver<Events, void*> deepSleepObserver =
         CallbackObserver<Events, void*>(this, &Events::beforeDeepSleep);
+
+    // Get notified when the system is rebooting
+    CallbackObserver<Events, void*> rebootObserver =
+        CallbackObserver<Events, void*>(this, &Events::beforeReboot);
 
     // Module references
     MessageModule* messageModule = nullptr;

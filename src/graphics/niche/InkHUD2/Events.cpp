@@ -75,8 +75,12 @@ void Events::begin(MessageModule* msgModule, BatteryModule* batModule, NodeListM
     // Start observing deep sleep (shutdown)
     deepSleepObserver.observe(&notifyDeepSleep);
 
-    // Initial sync of nodes
-    syncNodes();
+    // Start observing reboot (from app settings change etc.)
+    rebootObserver.observe(&notifyReboot);
+
+    // No initial syncNodes() here - Meshtastic calls nodeDB->notifyObservers(true)
+    // after setupNicheGraphics() completes (main.cpp line ~1024), which will trigger
+    // onNodeStatusUpdate() and syncNodes() with fully loaded NodeDB.
 }
 
 void Events::stop() {
@@ -84,11 +88,17 @@ void Events::stop() {
     powerStatusObserver.unobserve(&powerStatus->onNewStatus);
     nodeStatusObserver.unobserve(&nodeDB->newStatus);
     deepSleepObserver.unobserve(&notifyDeepSleep);
+    rebootObserver.unobserve(&notifyReboot);
     messageModule = nullptr;
     batteryModule = nullptr;
     nodeListModule = nullptr;
     mapModule = nullptr;
     menuModule = nullptr;
+}
+
+void Events::tick() {
+    // Reserved for future periodic operations
+    // Currently unused - syncNodes() is triggered by nodeDB->notifyObservers()
 }
 
 void Events::syncNodes() {
@@ -256,6 +266,18 @@ int Events::beforeDeepSleep(void* unused) {
     playShutdownMelody();
 
     return 0;  // Agree to deep sleep
+}
+
+int Events::beforeReboot(void* unused) {
+    // Show shutdown screen for reboot (triggered by app settings change etc.)
+    if (menuModule) {
+        menuModule->showShutdownScreen();
+    }
+
+    // Save NodeDB before reboot
+    nodeDB->saveToDisk();
+
+    return 0;  // Agree to reboot
 }
 
 } // namespace InkHUD2
