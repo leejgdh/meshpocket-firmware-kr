@@ -167,18 +167,25 @@ void BootModule::renderPairing(RenderContext& ctx) {
     // Check if PIN should be hidden (user setting)
     bool hidePin = Settings::instance().getHidePIN();
 
+    // Scale down text for narrow screens
+    float headerScale = layout->isVertical() ? Layout::smallScale : 1.0f;
+    float textScale = layout->effectiveMenuScale();
+
     // "Bluetooth" header at Y=25%
     int16_t headerY = h * Layout::pairingHeaderY / 100;
-    ctx.text(centerX, headerY, "Bluetooth", Align::CENTER, Color::BLACK);
+    ctx.textScaled(centerX, headerY, "Bluetooth", headerScale, Align::CENTER, Color::BLACK);
 
     if (isFixedPin && hidePin) {
         // Fixed PIN mode with hidden PIN - show "Pairing with predefined PIN"
         int16_t midY = h * Layout::pairingPinY / 100;
-        ctx.textScaled(centerX, midY - lineH / 2, "Pairing with", Layout::menuScale, Align::CENTER, Color::BLACK);
-        ctx.textScaled(centerX, midY + lineH / 2, "predefined PIN", Layout::menuScale, Align::CENTER, Color::BLACK);
+        ctx.textScaled(centerX, midY - lineH / 2, "Pairing with", textScale, Align::CENTER, Color::BLACK);
+        ctx.textScaled(centerX, midY + lineH / 2, "predefined PIN", textScale, Align::CENTER, Color::BLACK);
     } else {
         // Show PIN (hidden or actual)
-        ctx.textScaled(centerX, headerY + lineH, "Enter this code", Layout::menuScale, Align::CENTER, Color::BLACK);
+        // "Enter this code" centered between header and PIN (equal spacing)
+        int16_t pinY = h * Layout::pairingPinY / 100;
+        int16_t enterCodeY = (headerY + pinY) / 2;
+        ctx.textScaled(centerX, enterCodeY, "Enter this code", textScale, Align::CENTER, Color::BLACK);
 
         // PIN code at Y=50% with space in middle "123 456"
         char pinStr[16];
@@ -189,15 +196,16 @@ void BootModule::renderPairing(RenderContext& ctx) {
             uint32_t last3 = pairingCode % 1000;
             snprintf(pinStr, sizeof(pinStr), "%03lu %03lu", (unsigned long)first3, (unsigned long)last3);
         }
-        int16_t pinY = h * Layout::pairingPinY / 100;
-        ctx.text(centerX, pinY, pinStr, Align::CENTER, Color::BLACK);
+        // PIN code should be larger for readability
+        float pinScale = layout->isVertical() ? Layout::smallScale : 1.0f;
+        ctx.textScaled(centerX, pinY, pinStr, pinScale, Align::CENTER, Color::BLACK);
     }
 
     // Device short name at Y=75%
     int16_t nameY = h * Layout::pairingNameY / 100;
     meshtastic_NodeInfoLite *ourNode = nodeDB->getMeshNode(nodeDB->getNodeNum());
     if (ourNode && ourNode->has_user) {
-        ctx.textScaled(centerX, nameY, ourNode->user.short_name, Layout::menuScale, Align::CENTER, Color::BLACK);
+        ctx.textScaled(centerX, nameY, ourNode->user.short_name, textScale, Align::CENTER, Color::BLACK);
     }
 }
 

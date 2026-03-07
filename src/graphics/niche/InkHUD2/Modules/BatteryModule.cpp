@@ -24,19 +24,20 @@ void BatteryModule::onRender(RenderContext& ctx) {
     // Clear background (we're an overlay)
     ctx.fillRect(0, 0, r.w, r.h, Color::WHITE);
 
-    // Battery dimensions (original InkHUD style)
+    // Battery dimensions - centered vertically in rect
     uint16_t bumpW = layout->batteryBumpWidth();
-    uint16_t elemSpacing = layout->elementSpacing();
     uint16_t bodyInset = layout->batteryBodyInset();
 
-    uint16_t bumpH = (r.h - elemSpacing) / 2;
-    int16_t bumpX = bodyInset;
-    int16_t bumpY = (bodyInset + (r.h - elemSpacing) / 2) - (bumpH / 2);
-
+    // Body dimensions - centered in rect with inset on all sides
+    uint16_t bodyH = r.h - 2 * bodyInset;
+    uint16_t bodyW = r.w - 2 * bodyInset - bumpW;
     int16_t bodyX = bodyInset + bumpW;
     int16_t bodyY = bodyInset;
-    uint16_t bodyH = r.h - elemSpacing;
-    uint16_t bodyW = (r.w - bodyInset) - bumpW;
+
+    // Bump (positive terminal) - vertically centered, half height of body
+    uint16_t bumpH = bodyH / 2;
+    int16_t bumpX = bodyInset;
+    int16_t bumpY = bodyY + (bodyH - bumpH) / 2;
 
     // Draw bump (positive terminal)
     ctx.fillRect(bumpX, bumpY, bumpW, bumpH, Color::BLACK);

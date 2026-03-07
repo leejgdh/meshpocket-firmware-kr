@@ -9,6 +9,7 @@
 #include "../UI/ContentArea.h"
 #include "../UI/Footer.h"
 #include "../UI/Compass.h"
+#include "../UI/HeaderText.h"
 #include "gps/GeoCoord.h"
 #include "NodeDB.h"
 #include "RTC.h"
@@ -34,7 +35,7 @@ void MapModule::initSettingsMenu() {
     settingsItems[1].type = MenuItemType::ACTION;
 
     // Show all nodes toggle
-    settingsItems[2].label = "Show all nodes";
+    settingsItems[2].label = "Show All";
     settingsItems[2].type = MenuItemType::TOGGLE;
     settingsItems[2].toggleValue = &showAllNodes;
 
@@ -270,19 +271,21 @@ void MapModule::renderMap(RenderContext& ctx) {
     TextRenderer textRenderer(buffer, font);
     textRenderer.setClip(ctx.clip().x, ctx.clip().y, ctx.clip().w, ctx.clip().h);
 
-    // === Header ===
+    // === Header with smart truncation ===
     auto visible = getVisibleNodes();
-    char title[32];
     size_t count = visible.size();
-    if (showAllNodes) {
-        snprintf(title, sizeof(title), "Map: %d node%s", (int)count, count == 1 ? "" : "s");
-    } else {
-        snprintf(title, sizeof(title), "Map: %d fav%s", (int)count, count == 1 ? "" : "s");
-    }
+    HeaderText header(showAllNodes ? HeaderText::Type::MAP_NODES : HeaderText::Type::MAP_FAVS,
+                      static_cast<int>(count));
+
+    // Calculate max title width (leave space for battery icon)
+    Rect batRect = layout->batteryRect();
+    uint16_t iconW = layout->lineHeight();
+    uint16_t maxTitleW = batRect.x - layout->margin() - padding - iconW - padding * 2;
+    const char* title = header.getText(&textRenderer, maxTitleW, StatusBar::TITLE_SCALE);
 
     // === Render StatusBar ===
     StatusBar statusBar(buffer, layout, &textRenderer);
-    int16_t contentTop = statusBar.render(padding, title, StatusBar::Icon::MAP);
+    int16_t contentTop = statusBar.render(layout->margin() + padding, title, StatusBar::Icon::MAP);
 
     // === Footer area for scale bar ===
     uint16_t footerH = lineH;
@@ -306,29 +309,33 @@ void MapModule::renderMap(RenderContext& ctx) {
 
         if (config.position.gps_mode == meshtastic_Config_PositionConfig_GpsMode_NOT_PRESENT) {
             statusLine1 = "No GPS";
-            statusLine2 = "Module not present";
+            statusLine2 = layout->isVertical() ? "Not present" : "Module not present";
         } else if (config.position.gps_mode != meshtastic_Config_PositionConfig_GpsMode_ENABLED) {
             statusLine1 = "GPS disabled";
-            statusLine2 = "Enable in settings";
+            statusLine2 = layout->isVertical() ? "Enable GPS" : "Enable in settings";
         } else {
             statusLine1 = "No position";
             statusLine2 = "Initializing...";
         }
 
-        ctx.text(mapCenterX, mapCenterY - layout->verticalTextGap(), statusLine1, Align::CENTER, Color::BLACK);
-        ctx.textScaled(mapCenterX, mapCenterY + layout->verticalTextGap(), statusLine2, Layout::smallScale, Align::CENTER, Color::BLACK);
+        int16_t gap = layout->verticalTextGap() * 3 / 2;  // Larger gap for readability
+        ctx.text(mapCenterX, mapCenterY - gap, statusLine1, Align::CENTER, Color::BLACK);
+        ctx.textScaled(mapCenterX, mapCenterY + gap, statusLine2, layout->effectiveSmallScale(), Align::CENTER, Color::BLACK);
         drawScaleBar(ctx, footerTop);
         return;
     }
 
     // Check for visible nodes
     if (visible.empty()) {
+        int16_t gap = layout->verticalTextGap() * 3 / 2;  // Larger gap for readability
         if (showAllNodes) {
-            ctx.text(mapCenterX, mapCenterY - layout->verticalTextGap(), "No nodes", Align::CENTER, Color::BLACK);
-            ctx.textScaled(mapCenterX, mapCenterY + layout->verticalTextGap(), "with GPS position", Layout::smallScale, Align::CENTER, Color::BLACK);
+            ctx.text(mapCenterX, mapCenterY - gap, "No nodes", Align::CENTER, Color::BLACK);
+            const char* line2 = layout->isVertical() ? "with GPS" : "with GPS position";
+            ctx.textScaled(mapCenterX, mapCenterY + gap, line2, layout->effectiveSmallScale(), Align::CENTER, Color::BLACK);
         } else {
-            ctx.text(mapCenterX, mapCenterY - layout->verticalTextGap(), "No favorites", Align::CENTER, Color::BLACK);
-            ctx.textScaled(mapCenterX, mapCenterY + layout->verticalTextGap(), "Add in Meshtastic app", Layout::smallScale, Align::CENTER, Color::BLACK);
+            ctx.text(mapCenterX, mapCenterY - gap, "No favorites", Align::CENTER, Color::BLACK);
+            const char* line2 = layout->isVertical() ? "Add in app" : "Add in Meshtastic app";
+            ctx.textScaled(mapCenterX, mapCenterY + gap, line2, layout->effectiveSmallScale(), Align::CENTER, Color::BLACK);
         }
         drawScaleBar(ctx, footerTop);
         return;
@@ -372,9 +379,15 @@ void MapModule::renderSettings(RenderContext& ctx) {
     // Create TextRenderer for UI components
     TextRenderer textRenderer(buffer, font);
 
-    // === Header (left-aligned with icon) ===
+    // === Header with smart truncation ===
+    HeaderText headerText(HeaderText::Type::SETTINGS);
+    Rect batRect = layout->batteryRect();
+    uint16_t iconW = layout->lineHeight();
+    uint16_t maxTitleW = batRect.x - margin - iconW - layout->padding() * 2;
+    const char* settingsTitle = headerText.getText(&textRenderer, maxTitleW, StatusBar::TITLE_SCALE);
+
     StatusBar header(buffer, layout, &textRenderer);
-    int16_t contentTop = header.render(margin, "Map Settings", StatusBar::Icon::GEAR, false);
+    int16_t contentTop = header.render(margin, settingsTitle, StatusBar::Icon::GEAR, false);
 
     // === Footer (hint at bottom) ===
     Footer footer(buffer, layout, &textRenderer);
@@ -666,8 +679,8 @@ void MapModule::renderPosition(RenderContext& ctx) {
     }
 
     // Compass position: right side, vertically centered in content area
-    uint16_t compassRadius = 28;
-    int16_t compassX = ctx.width() - margin - compassRadius - 5;
+    uint16_t compassRadius = layout->compassRadius();
+    int16_t compassX = ctx.width() - margin - compassRadius - layout->compassMargin();
     int16_t compassY = contentTop + (contentBottom - contentTop) / 2;
 
     Compass compass(buffer, layout);

@@ -239,6 +239,7 @@ void MenuModule::renderStatusBar(RenderContext& ctx) {
     uint16_t lineH = layout->lineHeight();
     uint16_t margin = layout->statusBarMargin();
     int16_t centerX = ctx.width() / 2;
+    int16_t screenW = ctx.width();
 
     // Get current time and date from RTC
     uint32_t rtcTime = getValidTime(RTCQuality::RTCQualityDevice, true);
@@ -256,69 +257,96 @@ void MenuModule::renderStatusBar(RenderContext& ctx) {
         }
     }
 
-    // Large time at top center (HH:MM)
     char timeStr[8];
     snprintf(timeStr, sizeof(timeStr), "%02d:%02d", hours, minutes);
-    ctx.text(centerX, margin, timeStr, Align::CENTER, Color::BLACK);
-
-    // Status row below time: Bat | Date | FW (3 columns)
-    int16_t statusY = margin + lineH + layout->elementSpacing();
-    uint16_t smallLineH = layout->smallLineHeight();
-
-    // Prepare text content first to measure widths
-    float batVolts = 0.0f;
-    if (powerStatus) {
-        batVolts = powerStatus->getBatteryVoltageMv() / 1000.0f;
-    }
-    char batStr[16];
-    snprintf(batStr, sizeof(batStr), "%.2fV", batVolts);
 
     char dateStr[16];
     snprintf(dateStr, sizeof(dateStr), "%04d/%02d/%02d", year, month, day);
 
-    // Measure text widths
-    uint16_t batWidth = ctx.textWidthScaled(batStr, Layout::smallScale);
-    uint16_t dateWidth = ctx.textWidthScaled(dateStr, Layout::smallScale);
-    uint16_t fwWidth = ctx.textWidthScaled(firmwareVersion, Layout::smallScale);
+    float smallScale = layout->effectiveSmallScale();
+    uint16_t smallLineH = layout->smallLineHeight();
 
-    // Proportional columns based on text width + fixed padding
-    int16_t screenW = ctx.width();
-    uint16_t colPadding = layout->menuColumnPadding();
-    uint16_t col1Width = batWidth + colPadding;
-    uint16_t col2Width = dateWidth + colPadding;
-    uint16_t col3Width = fwWidth + colPadding;
-    uint16_t totalColWidth = col1Width + col2Width + col3Width;
+    if (layout->isVertical()) {
+        // Vertical mode:
+        // Line 1: Time centered
+        // Line 2: Bat voltage | FW
+        // Line 3: Date centered
+        int16_t line1Y = margin;
+        int16_t line2Y = margin + lineH + layout->elementSpacing();
+        int16_t line3Y = line2Y + smallLineH + layout->elementSpacing();
 
-    // Scale to fit screen
-    int16_t available = screenW - 2 * margin;
-    col1Width = col1Width * available / totalColWidth;
-    col2Width = col2Width * available / totalColWidth;
-    col3Width = available - col1Width - col2Width;
+        float batVolts = 0.0f;
+        if (powerStatus) {
+            batVolts = powerStatus->getBatteryVoltageMv() / 1000.0f;
+        }
+        char batStr[16];
+        snprintf(batStr, sizeof(batStr), "%.2fV", batVolts);
 
-    // Column centers
-    int16_t col1Center = margin + col1Width / 2;
-    int16_t col2Center = margin + col1Width + col2Width / 2;
-    int16_t col3Center = margin + col1Width + col2Width + col3Width / 2;
+        // Line 1: Time centered
+        ctx.text(centerX, line1Y, timeStr, Align::CENTER, Color::BLACK);
 
-    // Separators offset from column boundaries
-    uint16_t sepOffset = colPadding / 2;
-    int16_t sep1X = margin + col1Width + sepOffset;
-    int16_t sep2X = margin + col1Width + col2Width + sepOffset;
+        // Line 2: Bat left, FW right
+        ctx.textScaled(margin, line2Y, batStr, smallScale, Align::LEFT, Color::BLACK);
+        ctx.textScaled(screenW - margin, line2Y, firmwareVersion, smallScale, Align::RIGHT, Color::BLACK);
 
-    // Draw text centered in each column
-    ctx.textScaled(col1Center, statusY, "Bat", Layout::smallScale, Align::CENTER, Color::BLACK);
-    ctx.textScaled(col1Center, statusY + smallLineH, batStr, Layout::smallScale, Align::CENTER, Color::BLACK);
+        // Dotted separator between Bat and FW
+        for (int16_t py = line2Y; py < line2Y + smallLineH; py += layout->dotSpacing()) {
+            ctx.pixel(centerX, py, Color::BLACK);
+        }
 
-    ctx.textScaled(col2Center, statusY, "Date", Layout::smallScale, Align::CENTER, Color::BLACK);
-    ctx.textScaled(col2Center, statusY + smallLineH, dateStr, Layout::smallScale, Align::CENTER, Color::BLACK);
+        // Line 3: Date centered
+        ctx.textScaled(centerX, line3Y, dateStr, smallScale, Align::CENTER, Color::BLACK);
+    } else {
+        // Normal mode: Time centered, then Bat | Date | FW row
+        ctx.text(centerX, margin, timeStr, Align::CENTER, Color::BLACK);
 
-    ctx.textScaled(col3Center, statusY, "FW", Layout::smallScale, Align::CENTER, Color::BLACK);
-    ctx.textScaled(col3Center, statusY + smallLineH, firmwareVersion, Layout::smallScale, Align::CENTER, Color::BLACK);
+        int16_t statusY = margin + lineH + layout->elementSpacing();
 
-    // Draw vertical dotted separators
-    for (int16_t py = statusY; py < statusY + smallLineH * 2; py += layout->dotSpacing()) {
-        ctx.pixel(sep1X, py, Color::BLACK);
-        ctx.pixel(sep2X, py, Color::BLACK);
+        float batVolts = 0.0f;
+        if (powerStatus) {
+            batVolts = powerStatus->getBatteryVoltageMv() / 1000.0f;
+        }
+        char batStr[16];
+        snprintf(batStr, sizeof(batStr), "%.2fV", batVolts);
+
+        // Measure text widths
+        uint16_t batWidth = ctx.textWidthScaled(batStr, smallScale);
+        uint16_t dateWidth = ctx.textWidthScaled(dateStr, smallScale);
+        uint16_t fwWidth = ctx.textWidthScaled(firmwareVersion, smallScale);
+
+        // Proportional columns
+        uint16_t colPadding = layout->menuColumnPadding();
+        uint16_t col1Width = batWidth + colPadding;
+        uint16_t col2Width = dateWidth + colPadding;
+        uint16_t col3Width = fwWidth + colPadding;
+        uint16_t totalColWidth = col1Width + col2Width + col3Width;
+
+        int16_t available = screenW - 2 * margin;
+        col1Width = col1Width * available / totalColWidth;
+        col2Width = col2Width * available / totalColWidth;
+        col3Width = available - col1Width - col2Width;
+
+        int16_t col1Center = margin + col1Width / 2;
+        int16_t col2Center = margin + col1Width + col2Width / 2;
+        int16_t col3Center = margin + col1Width + col2Width + col3Width / 2;
+
+        uint16_t sepOffset = colPadding / 2;
+        int16_t sep1X = margin + col1Width + sepOffset;
+        int16_t sep2X = margin + col1Width + col2Width + sepOffset;
+
+        ctx.textScaled(col1Center, statusY, "Bat", smallScale, Align::CENTER, Color::BLACK);
+        ctx.textScaled(col1Center, statusY + smallLineH, batStr, smallScale, Align::CENTER, Color::BLACK);
+
+        ctx.textScaled(col2Center, statusY, "Date", smallScale, Align::CENTER, Color::BLACK);
+        ctx.textScaled(col2Center, statusY + smallLineH, dateStr, smallScale, Align::CENTER, Color::BLACK);
+
+        ctx.textScaled(col3Center, statusY, "FW", smallScale, Align::CENTER, Color::BLACK);
+        ctx.textScaled(col3Center, statusY + smallLineH, firmwareVersion, smallScale, Align::CENTER, Color::BLACK);
+
+        for (int16_t py = statusY; py < statusY + smallLineH * 2; py += layout->dotSpacing()) {
+            ctx.pixel(sep1X, py, Color::BLACK);
+            ctx.pixel(sep2X, py, Color::BLACK);
+        }
     }
 }
 
@@ -512,9 +540,13 @@ void MenuModule::renderAlert(RenderContext& ctx) {
         }
         contentTop = statusBarEnd + layout->sectionSpacing();
 
-        // Footer hint
-        Footer footer(buffer, layout, &textRenderer);
-        contentBottom = footer.renderHint("Click: return to menu");
+        // Footer hint (unless hidden for transient alerts like "Saving...")
+        if (!alertHideHint) {
+            Footer footer(buffer, layout, &textRenderer);
+            contentBottom = footer.renderHint("Click: return to menu");
+        } else {
+            contentBottom = ctx.height() - margin;
+        }
     }
 
     // === Content area ===
@@ -549,9 +581,10 @@ void MenuModule::renderShutdown(RenderContext& ctx) {
     // Draw Meshtastic logo
     Logo::draw(ctx, centerX, logoCY, logoW, logoH);
 
-    // "Shutting Down..." below logo
+    // "Shutting Down..." below logo - scale down for narrow screens
     int16_t textY = logoCY + logoH / 2 + layout->lineHeight();
-    ctx.text(centerX, textY, "Shutting Down...", Align::CENTER, Color::BLACK);
+    float scale = layout->isVertical() ? Layout::smallScale : 1.0f;
+    ctx.textScaled(centerX, textY, "Shutting Down...", scale, Align::CENTER, Color::BLACK);
 }
 
 void MenuModule::renderShutdownFinal(RenderContext& ctx) {

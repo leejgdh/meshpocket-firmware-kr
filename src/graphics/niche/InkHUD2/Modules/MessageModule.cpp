@@ -7,6 +7,7 @@
 #include "../UI/StatusBar.h"
 #include "../UI/Footer.h"
 #include "../UI/ContentArea.h"
+#include "../UI/HeaderText.h"
 #include "../Views/ChatView.h"
 #include "../Views/DMView.h"
 #include <cstdio>
@@ -67,13 +68,24 @@ void MessageModule::onRender(RenderContext& ctx) {
     bool hasMessages = (currentTabIndex < channelMessages.size()) &&
                        !channelMessages[currentTabIndex].empty();
 
-    // === Render StatusBar ===
+    // === Render StatusBar with smart truncation ===
     StatusBar statusBar(buffer, layout, &textRenderer);
+
+    // Calculate max title width
+    Rect batRect = layout->batteryRect();
+    uint16_t iconW = layout->lineHeight();
+    uint16_t maxTitleW = batRect.x - layout->margin() - padding - iconW - padding * 2;
+
+    // Build title - need static buffer since HeaderText returns internal pointer
+    static char titleBuf[32];
     const char* title;
     if (useChatStyle) {
-        title = "Group Chat";
+        HeaderText header(HeaderText::Type::GROUP_CHAT);
+        strncpy(titleBuf, header.getText(&textRenderer, maxTitleW, StatusBar::TITLE_SCALE), sizeof(titleBuf) - 1);
+        titleBuf[sizeof(titleBuf) - 1] = '\0';
+        title = titleBuf;
     } else {
-        // DM - show sender name
+        // DM - show sender name (already short, use as-is)
         if (hasMessages) {
             const ChannelMessage& msg = channelMessages[currentTabIndex].front();
             title = getShortName ? getShortName(msg.from) : defaultNodeName(msg.from);
@@ -81,7 +93,7 @@ void MessageModule::onRender(RenderContext& ctx) {
             title = "DM";
         }
     }
-    int16_t contentTop = statusBar.render(padding, title, StatusBar::Icon::ENVELOPE);
+    int16_t contentTop = statusBar.render(layout->margin() + padding, title, StatusBar::Icon::ENVELOPE);
 
     // === Render Footer (tabs) ===
     Footer footer(buffer, layout, &textRenderer);

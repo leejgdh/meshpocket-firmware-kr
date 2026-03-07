@@ -7,6 +7,7 @@
 #include "../Text/TextRenderer.h"
 #include "../UI/StatusBar.h"
 #include "../UI/ContentArea.h"
+#include "../UI/HeaderText.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -31,30 +32,32 @@ void NodeListModule::onRender(RenderContext& ctx) {
     TextRenderer textRenderer(buffer, font);
     textRenderer.setClip(ctx.clip().x, ctx.clip().y, ctx.clip().w, ctx.clip().h);
 
-    // Build header text like old InkHUD: "Heard: N nodes"
-    std::string title;
+    // Build header text with smart truncation
+    HeaderText header(HeaderText::Type::CUSTOM);
     switch (currentView) {
-        case NodeListView::ALL: {
-            size_t count = nodes.size();
-            title = "All: " + std::to_string(count) + (count == 1 ? " node" : " nodes");
+        case NodeListView::ALL:
+            header = HeaderText(HeaderText::Type::ALL_NODES, static_cast<int>(nodes.size()));
             break;
-        }
-        case NodeListView::RECENT: {
-            size_t count = sortedNodes().size();
-            title = "Heard: " + std::to_string(count) + (count == 1 ? " node" : " nodes");
+        case NodeListView::RECENT:
+            header = HeaderText(HeaderText::Type::HEARD, static_cast<int>(sortedNodes().size()));
             break;
-        }
         case NodeListView::FAVORITES: {
             size_t count = 0;
             for (const auto& n : nodes) if (n.isFavorite) count++;
-            title = "Favorites: " + std::to_string(count) + (count == 1 ? " node" : " nodes");
+            header = HeaderText(HeaderText::Type::FAVORITES, static_cast<int>(count));
             break;
         }
     }
 
     // === Render StatusBar ===
+    // Calculate max title width (leave space for battery icon)
+    Rect batRect = layout->batteryRect();
+    uint16_t iconW = layout->lineHeight();
+    uint16_t maxTitleW = batRect.x - layout->margin() - padding - iconW - padding * 2;
+    const char* title = header.getText(&textRenderer, maxTitleW, StatusBar::TITLE_SCALE);
+
     StatusBar statusBar(buffer, layout, &textRenderer);
-    int16_t contentTop = statusBar.render(padding, title.c_str(), StatusBar::Icon::USERS);
+    int16_t contentTop = statusBar.render(layout->margin() + padding, title, StatusBar::Icon::USERS);
 
     // === Calculate content area (no footer for NodeList) ===
     int16_t contentBottom = ctx.height();
@@ -85,6 +88,27 @@ void NodeListModule::onInput(Input input) {
         case Input::LEFT:
         case Input::RIGHT:
             cycleView();
+            break;
+
+        case Input::DOWN:
+            // Scroll down one node (only if there are hidden nodes below)
+            {
+                auto sorted = sortedNodes();
+                size_t totalNodes = sorted.size();
+                // Only scroll if there are more nodes than fit on screen
+                if (totalNodes > visibleNodeCount && scrollOffset < totalNodes - visibleNodeCount) {
+                    scrollOffset++;
+                    requestUpdate();
+                }
+            }
+            break;
+
+        case Input::UP:
+            // Return to beginning
+            if (scrollOffset > 0) {
+                scrollOffset = 0;
+                requestUpdate();
+            }
             break;
 
         case Input::BACK:
@@ -166,8 +190,6 @@ std::vector<NodeEntry> NodeListModule::sortedNodes() const {
     for (const auto& n : nodes) {
         switch (currentView) {
             case NodeListView::ALL:
-                result.push_back(n);
-                break;
             case NodeListView::RECENT:
                 result.push_back(n);
                 break;
@@ -190,15 +212,8 @@ std::vector<NodeEntry> NodeListModule::sortedNodes() const {
             break;
 
         case NodeListView::RECENT:
-            // Sort by last heard (newest first)
-            std::sort(result.begin(), result.end(),
-                [](const NodeEntry& a, const NodeEntry& b) {
-                    return a.lastHeard > b.lastHeard;
-                });
-            break;
-
         case NodeListView::FAVORITES:
-            // Sort by last heard
+            // Sort by last heard (newest first)
             std::sort(result.begin(), result.end(),
                 [](const NodeEntry& a, const NodeEntry& b) {
                     return a.lastHeard > b.lastHeard;
@@ -214,19 +229,29 @@ void NodeListModule::renderNodeList(RenderContext& ctx, const ContentArea& conte
     if (!layout) return;
 
     uint16_t lineH = layout->lineHeight();
-    uint16_t smallLineH = layout->smallLineHeight();
 
-    // Card height: full line + smaller line
-    uint16_t cardH = lineH + smallLineH;
+    // Detect elongated screen (aspect ratio > 1.5)
+    uint16_t maxDim = std::max(ctx.width(), ctx.height());
+    uint16_t minDim = std::min(ctx.width(), ctx.height());
+    bool isElongated = (minDim > 0) && (maxDim * 10 / minDim > 15);
+
+    // Card height depends on screen type
+    uint16_t shortLineH = isElongated ? layout->smallLineHeight() : lineH;
+    uint16_t longLineH = isElongated ? static_cast<uint16_t>(lineH * 0.67f) : layout->smallLineHeight();
+    uint16_t cardH = shortLineH + longLineH;
     uint16_t cardMargin = layout->nodeCardMargin();
 
     int16_t y = content.top();
     auto sorted = sortedNodes();
 
     if (sorted.empty()) {
+        visibleNodeCount = 0;
         ctx.text(ctx.width() / 2, content.top() + content.h / 2, "No nodes", Align::CENTER, Color::BLACK);
         return;
     }
+
+    // Calculate how many nodes fit on screen
+    visibleNodeCount = (content.h + cardMargin) / (cardH + cardMargin);
 
     // Render visible nodes (two lines per node)
     for (size_t i = scrollOffset; i < sorted.size() && y < content.bottom() - cardH; ++i) {
@@ -240,88 +265,115 @@ void NodeListModule::renderNodeRow(RenderContext& ctx, const NodeEntry& node, in
     if (!layout) return;
 
     uint16_t lineH = layout->lineHeight();
-    uint16_t smallLineH = layout->smallLineHeight();
+
+    // Use smaller fonts for elongated screens (aspect ratio > 1.5) to fit more content
+    uint16_t maxDim = std::max(ctx.width(), ctx.height());
+    uint16_t minDim = std::min(ctx.width(), ctx.height());
+    bool isElongated = (minDim > 0) && (maxDim * 10 / minDim > 15);
+
+    // For elongated: shortName uses smallScale, longName uses even smaller
+    // For square: shortName full size, longName uses smallScale
+    float shortNameScale = isElongated ? Layout::smallScale : 1.0f;
+    float longNameScale = isElongated ? 0.67f : Layout::smallScale;  // ~12px equivalent
+    uint16_t shortLineH = isElongated ? layout->smallLineHeight() : lineH;
+    uint16_t longLineH = static_cast<uint16_t>(lineH * longNameScale);
 
     Color textColor = Color::BLACK;
 
-    // Two-line layout like old InkHUD:
-    // Line A (top): shortName left, signal/hops right (full size)
-    // Line B (bottom): longName left, distance right (smaller font)
+    // Two-line layout:
+    // Line A (top): shortName left, [hops] + signal bars right
+    // Line B (bottom): longName left, distance right
 
     int16_t lineAY = y;
-    int16_t lineBY = y + lineH;
+    int16_t lineBY = y + shortLineH;
 
     // Get layout values
     uint16_t textInset = layout->textInset();
     uint16_t nodeTextInset = layout->nodeTextInset();
     uint16_t elemSpacing = layout->elementSpacing();
 
-    // Divider X - where right-side info starts (calculate with small font)
-    uint16_t dividerX = ctx.width() - ctx.textWidthScaled("X Hops", Layout::smallScale) - textInset;
-
-    // === Line A: Short name + signal/hops ===
+    // === Line A: Short name + [hops] + signal bars ===
     const char* shortName = (node.shortName[0] != '\0') ? node.shortName : "?";
-    ctx.text(nodeTextInset, lineAY, shortName, Align::LEFT, textColor);
+    if (isElongated) {
+        ctx.textScaled(nodeTextInset, lineAY, shortName, shortNameScale, Align::LEFT, textColor);
+    } else {
+        ctx.text(nodeTextInset, lineAY, shortName, Align::LEFT, textColor);
+    }
 
-    // Right side of Line A: signal indicator (if direct) or hops (smaller font)
-    if (node.hopsAway == 0 && node.snr != 0) {
-        // Direct connection - draw signal bars (aligned with shortName line)
-        int16_t signalX = ctx.width() - layout->signalBarsOffset();
-        renderSignalBars(ctx, layout, signalX, lineAY, node.snr, lineH);
-    } else if (node.hopsAway != NodeEntry::HOPS_UNKNOWN) {
-        // Show hops (smaller font)
-        std::string hopStr = std::to_string(node.hopsAway) + " Hop";
-        if (node.hopsAway != 1) hopStr += "s";
-        ctx.textScaled(ctx.width() - nodeTextInset, lineAY, hopStr.c_str(), Layout::smallScale, Align::RIGHT, textColor);
+    // Right side of Line A: [hops] + signal bars
+    bool hasHops = (node.hopsAway != NodeEntry::HOPS_UNKNOWN && node.hopsAway > 0);
+
+    // Calculate signal bars position (3 bars now)
+    uint16_t barW = layout->signalBarWidth();
+    uint16_t barSpacing = layout->signalBarSpacing();
+    uint16_t barsWidth = 3 * barW + 2 * barSpacing;  // 3 bars
+    int16_t signalX = ctx.width() - nodeTextInset - barsWidth;
+
+    // Draw hops before signal bars if present
+    if (hasHops) {
+        char hopsStr[8];
+        snprintf(hopsStr, sizeof(hopsStr), "%dH", node.hopsAway);
+        int16_t hopsX = signalX - elemSpacing;
+        if (isElongated) {
+            ctx.textScaled(hopsX, lineAY, hopsStr, shortNameScale, Align::RIGHT, textColor);
+        } else {
+            ctx.text(hopsX, lineAY, hopsStr, Align::RIGHT, textColor);
+        }
+    }
+
+    // Signal bars (if SNR available)
+    if (node.snr != 0) {
+        renderSignalBars(ctx, layout, signalX, lineAY, node.snr, shortLineH);
     }
 
     // === Line B: Long name + distance (smaller font) ===
+    bool hasDistance = (node.distanceMeters != NodeEntry::DISTANCE_UNKNOWN);
 
-    // Distance on right
-    std::string distStr;
-    if (node.distanceMeters != NodeEntry::DISTANCE_UNKNOWN) {
-        distStr = formatDistance(node.distanceMeters);
-        ctx.textScaled(ctx.width() - nodeTextInset, lineBY, distStr.c_str(), Layout::smallScale, Align::RIGHT, textColor);
+    // Divider X - where right-side info starts (only distance now)
+    uint16_t dividerX;
+    if (hasDistance) {
+        dividerX = ctx.width() - ctx.textWidthScaled("999km", longNameScale) - nodeTextInset;
+        ctx.textScaled(ctx.width() - nodeTextInset, lineBY, formatDistance(node.distanceMeters).c_str(),
+                       longNameScale, Align::RIGHT, textColor);
+    } else {
+        dividerX = ctx.width() - nodeTextInset;
     }
 
     // Long name on left (truncated with ellipsis if needed)
     std::string longName = (node.longName[0] != '\0') ? node.longName : shortName;
-    std::string truncatedName = truncateWithEllipsis(ctx, longName, dividerX - textInset, Layout::smallScale);
+    std::string truncatedName = truncateWithEllipsis(ctx, longName, dividerX - nodeTextInset - elemSpacing, longNameScale);
 
-    ctx.textScaled(nodeTextInset, lineBY, truncatedName.c_str(), Layout::smallScale, Align::LEFT, textColor);
+    ctx.textScaled(nodeTextInset, lineBY, truncatedName.c_str(), longNameScale, Align::LEFT, textColor);
 
     // Hatch fade effect for long names (only if truncated)
     if (longName.length() > truncatedName.length() - 3) {  // -3 for "..."
-        int16_t hatchLeft = dividerX - smallLineH;
-        int16_t hatchWidth = smallLineH;
-        hatchRegion(ctx, hatchLeft, lineBY, hatchWidth, smallLineH, elemSpacing, Color::WHITE);
+        int16_t hatchLeft = dividerX - longLineH - elemSpacing;
+        int16_t hatchWidth = longLineH;
+        hatchRegion(ctx, hatchLeft, lineBY, hatchWidth, longLineH, elemSpacing, Color::WHITE);
     }
 }
 
 void NodeListModule::renderSignalBars(RenderContext& ctx, const Layout* layout, int16_t x, int16_t y, int16_t snr, uint16_t height) {
     if (!layout) return;
 
-    // SNR is in dB * 4, so divide by 4 for actual dB
-    // Typical range: -20dB to +10dB
-    // Map to 0-4 bars
-
-    int8_t snrDb = snr / 4;
+    // SNR comes as raw dB value (not multiplied)
+    // Typical LoRa range: -20dB (barely works) to +10dB (excellent)
+    // Map to 0-3 bars: 0=none, 1=weak, 2=good, 3=excellent
     uint8_t bars;
 
-    if (snrDb < -15) bars = 0;
-    else if (snrDb < -10) bars = 1;
-    else if (snrDb < -5) bars = 2;
-    else if (snrDb < 0) bars = 3;
-    else bars = 4;
+    if (snr < -12) bars = 0;       // Very weak (< -12 dB)
+    else if (snr < -5) bars = 1;   // Weak (-12 to -5 dB)
+    else if (snr < 3) bars = 2;    // Good (-5 to +3 dB)
+    else bars = 3;                  // Excellent (> +3 dB)
 
     uint16_t barW = layout->signalBarWidth();
     uint16_t barSpacing = layout->signalBarSpacing();
     uint16_t maxBarH = height - layout->signalBarPadding();
     uint16_t elemSpacing = layout->elementSpacing();
 
-    // Bars aligned to bottom of the line (y + height)
-    for (uint8_t i = 0; i < 4; ++i) {
-        uint16_t barH = (maxBarH * (i + 1)) / 4;
+    // 3 bars aligned to bottom of the line (y + height)
+    for (uint8_t i = 0; i < 3; ++i) {
+        uint16_t barH = (maxBarH * (i + 1)) / 3;
         int16_t barX = x + i * (barW + barSpacing);
         int16_t barY = y + height - elemSpacing - barH;
 
