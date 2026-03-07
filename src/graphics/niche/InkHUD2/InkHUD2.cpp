@@ -103,6 +103,9 @@ int32_t InkHUD2::runOnce() {
         return 1000;  // Check again in 1 second
     }
 
+    // Handle delayed operations (e.g., early node sync on ESP32)
+    eventsInstance.tick();
+
     // Check for auto-transitions in system modules
     pipeInstance.checkAutoTransitions();
 
@@ -205,8 +208,20 @@ void InkHUD2::cycleSlot(uint8_t slot) {
 
 void InkHUD2::setRotation(uint8_t r) {
     if (buffer) {
+        uint16_t oldW = buffer->width();
+        uint16_t oldH = buffer->height();
+
         buffer->setRotation(r);
-        // No full refresh needed - differential works fine
+
+        // Recreate layout if dimensions changed (rotation 0/2 vs 1/3)
+        if (buffer->width() != oldW || buffer->height() != oldH) {
+            delete layoutPtr;
+            layoutPtr = new Layout(buffer->width(), buffer->height(), fontPtr);
+        }
+
+        // FULL refresh required: old memory contains image in previous orientation,
+        // differential refresh would compare misaligned pixel positions
+        fullRefreshRequested = true;
     }
 }
 
