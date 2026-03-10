@@ -4,6 +4,68 @@
 
 #ifdef MESHTASTIC_INCLUDE_NICHE_GRAPHICS
 
+// Shared NicheGraphics components
+// --------------------------------
+#include "graphics/niche/Drivers/EInk/E0213A367.h"
+#include "graphics/niche/Drivers/EInk/LCMEN2R13EFC1.h"
+#include "graphics/niche/Inputs/TwoButton.h"
+
+#include "einkDetect.h" // Detect display model at runtime
+
+// ============================================================================
+// InkHUD2 - New Architecture
+// ============================================================================
+#ifdef USE_INKHUD2
+
+#include "graphics/niche/InkHUD2/Setup.h"
+
+void setupNicheGraphics()
+{
+    using namespace NicheGraphics;
+
+    Serial.println(F("[NicheGfx] setupNicheGraphics() start"));
+
+    // Power on e-ink display (VEXT controls display power on Heltec boards)
+    pinMode(VEXT_ENABLE, OUTPUT);
+    digitalWrite(VEXT_ENABLE, VEXT_ON_VALUE);
+    delay(10);  // Let power stabilize
+
+    // Detect E-Ink Model
+    EInkDetectionResult displayModel = detectEInk();
+
+    // Initialize SPI for e-ink (HSPI)
+    SPIClass* hspi = new SPIClass(HSPI);
+    hspi->begin(PIN_EINK_SCLK, -1, PIN_EINK_MOSI, PIN_EINK_CS);
+
+    // Initialize e-ink driver based on detected model
+    Drivers::EInk* driver;
+    if (displayModel == EInkDetectionResult::LCMEN213EFC1) // V1.1
+        driver = new Drivers::LCMEN213EFC1;
+    else // V1.1.1, V1.2
+        driver = new Drivers::E0213A367;
+
+    driver->begin(hspi, PIN_EINK_DC, PIN_EINK_CS, PIN_EINK_BUSY, PIN_EINK_RES);
+
+    // Configure InkHUD2 (device-specific settings)
+    InkHUD2::Config config;
+    config.mainButtonPin = Inputs::TwoButton::getUserButtonPin();
+    config.mainButtonDebounce = 75;
+    config.mainButtonLongPress = 400;
+    config.hasAuxButton = false;  // No aux button on this board
+    config.hasBacklight = false;
+    config.defaultRotation = 3;   // 270 degrees - landscape
+
+    // Initialize InkHUD2 with common setup
+    InkHUD2::setup(driver, config);
+
+    Serial.println(F("[NicheGfx] setupNicheGraphics() complete"));
+}
+
+// ============================================================================
+// InkHUD (Original Architecture)
+// ============================================================================
+#else
+
 // InkHUD-specific components
 // ---------------------------
 #include "graphics/niche/InkHUD/InkHUD.h"
@@ -16,14 +78,6 @@
 #include "graphics/niche/InkHUD/Applets/User/Positions/PositionsApplet.h"
 #include "graphics/niche/InkHUD/Applets/User/RecentsList/RecentsListApplet.h"
 #include "graphics/niche/InkHUD/Applets/User/ThreadedMessage/ThreadedMessageApplet.h"
-
-// Shared NicheGraphics components
-// --------------------------------
-#include "graphics/niche/Drivers/EInk/E0213A367.h"
-#include "graphics/niche/Drivers/EInk/LCMEN2R13EFC1.h"
-#include "graphics/niche/Inputs/TwoButton.h"
-
-#include "einkDetect.h" // Detect display model at runtime
 
 void setupNicheGraphics()
 {
@@ -109,4 +163,6 @@ void setupNicheGraphics()
     buttons->start();
 }
 
-#endif
+#endif // USE_INKHUD2
+
+#endif // MESHTASTIC_INCLUDE_NICHE_GRAPHICS
