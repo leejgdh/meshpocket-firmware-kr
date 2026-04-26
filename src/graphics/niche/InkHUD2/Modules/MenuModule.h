@@ -95,8 +95,6 @@ private:
 
     // Helper for rendering
     void renderStatusBar(RenderContext& ctx);
-
-    // Font scales - use Layout::smallScale, Layout::menuScale, Layout::hintScale
 };
 
 } // namespace InkHUD2

@@ -261,253 +261,40 @@ void RenderContext::fillTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
 }
 
 // === Text ===
+// All glyph rendering delegates to TextRenderer (single owner of font math
+// and per-pixel clipping). Coordinates are clip-relative on entry; we
+// translate to absolute and forward the clip rect so TextRenderer's
+// per-pixel clip honors our slot.
 
-// Helper to draw a single glyph bitmap (handles PROGMEM and scaling)
-void RenderContext::drawGlyphBitmap(int16_t gx, int16_t gy, uint8_t width, uint8_t height,
-                                     const uint8_t* bitmap, uint32_t offset, Color c) {
-    const uint8_t* bitmapData = bitmap + offset;
-    float scale = font->getScale();
-
-    if (scale == 1.0f) {
-        // Native size - direct rendering
-        for (uint8_t row = 0; row < height; ++row) {
-            for (uint8_t col = 0; col < width; ++col) {
-                size_t bitIndex = static_cast<size_t>(row) * width + col;
-                size_t byteIndex = bitIndex / 8;
-                uint8_t bitOffset = 7 - (bitIndex % 8);  // MSB first
-
-                uint8_t byte = font->isCJKFont() ? pgm_read_byte(&bitmapData[byteIndex]) : bitmapData[byteIndex];
-                if (byte & (1 << bitOffset)) {
-                    setPixelClipped(gx + col, gy + row, c);
-                }
-            }
-        }
-    } else {
-        // Scaled rendering - nearest neighbor
-        // Note: produces poor quality for bitmap fonts, avoid using scale != 1.0
-        uint8_t srcWidth = font->isCJKFont() ? 18 : width;  // Original font width
-        uint8_t srcHeight = font->isCJKFont() ? 18 : height;
-        uint8_t dstWidth = static_cast<uint8_t>(srcWidth * scale + 0.5f);
-        uint8_t dstHeight = static_cast<uint8_t>(srcHeight * scale + 0.5f);
-
-        for (uint8_t dstRow = 0; dstRow < dstHeight; ++dstRow) {
-            uint8_t srcRow = static_cast<uint8_t>(dstRow / scale);
-            if (srcRow >= srcHeight) srcRow = srcHeight - 1;
-
-            for (uint8_t dstCol = 0; dstCol < dstWidth; ++dstCol) {
-                uint8_t srcCol = static_cast<uint8_t>(dstCol / scale);
-                if (srcCol >= srcWidth) srcCol = srcWidth - 1;
-
-                size_t bitIndex = static_cast<size_t>(srcRow) * srcWidth + srcCol;
-                size_t byteIndex = bitIndex / 8;
-                uint8_t bitOffset = 7 - (bitIndex % 8);
-
-                uint8_t byte = font->isCJKFont() ? pgm_read_byte(&bitmapData[byteIndex]) : bitmapData[byteIndex];
-                if (byte & (1 << bitOffset)) {
-                    setPixelClipped(gx + dstCol, gy + dstRow, c);
-                }
-            }
-        }
-    }
-}
-
-
-// Draw glyph bitmap with explicit scale (for scaled text rendering)
-void RenderContext::drawGlyphBitmapScaled(int16_t gx, int16_t gy, uint8_t srcW, uint8_t srcH,
-                                           const uint8_t* bitmap, uint32_t offset, float scale, Color c) {
-    const uint8_t* bitmapData = bitmap + offset;
-    uint8_t dstW = static_cast<uint8_t>(srcW * scale + 0.5f);
-    uint8_t dstH = static_cast<uint8_t>(srcH * scale + 0.5f);
-
-    for (uint8_t dstRow = 0; dstRow < dstH; ++dstRow) {
-        uint8_t srcRow = static_cast<uint8_t>(dstRow / scale);
-        if (srcRow >= srcH) srcRow = srcH - 1;
-
-        for (uint8_t dstCol = 0; dstCol < dstW; ++dstCol) {
-            uint8_t srcCol = static_cast<uint8_t>(dstCol / scale);
-            if (srcCol >= srcW) srcCol = srcW - 1;
-
-            size_t bitIndex = static_cast<size_t>(srcRow) * srcW + srcCol;
-            size_t byteIndex = bitIndex / 8;
-            uint8_t bitOffset = 7 - (bitIndex % 8);
-
-            uint8_t byte = font->isCJKFont() ? pgm_read_byte(&bitmapData[byteIndex]) : bitmapData[byteIndex];
-            if (byte & (1 << bitOffset)) {
-                setPixelClipped(gx + dstCol, gy + dstRow, c);
-            }
-        }
-    }
-}
-
-void RenderContext::text(int16_t x, int16_t y, const char* str, Align align, Color c, float scale) {
-    if (!str || !font || !font->isCJKFont()) return;  // Only CJK font supports scaling
-
-    // Calculate width for alignment
-    uint16_t tw = textWidth(str, scale);
-    if (align == Align::CENTER) {
-        x -= tw / 2;
-    } else if (align == Align::RIGHT) {
-        x -= tw;
-    }
-
-    // CJK font metrics (unscaled source)
-    const uint8_t srcW = 18;
-    const uint8_t srcH = 18;
-    const int8_t srcYOffset = -18;
-    // Round negative values properly (toward negative infinity)
-    int8_t scaledYOffset = static_cast<int8_t>(srcYOffset * scale - 0.5f);
-    uint8_t scaledAscent = static_cast<uint8_t>(18 * scale + 0.5f);
-
-    int16_t cursorX = clipX + x;
-    int16_t cursorY = clipY + y + scaledAscent;
-
-    const char* ptr = str;
-    uint32_t prevCp = 0;
-    while (*ptr) {
-        uint32_t cp = Font::decodeUTF8(ptr);
-        if (cp == 0) break;
-
-        // Add spacing when transitioning between Latin/Cyrillic and CJK
-        bool prevIsLatin = (prevCp >= 0x21 && prevCp <= 0x7E) ||
-                           (prevCp >= 0x400 && prevCp <= 0x4FF) ||
-                           (prevCp >= 0xC0 && prevCp <= 0x2FF);
-        bool currIsLatin = (cp >= 0x21 && cp <= 0x7E) ||
-                           (cp >= 0x400 && cp <= 0x4FF) ||
-                           (cp >= 0xC0 && cp <= 0x2FF);
-        bool prevIsCJK = (prevCp >= 0x3040 && prevCp <= 0x30FF) ||
-                         (prevCp >= 0x4E00 && prevCp <= 0x9FFF);
-        bool currIsCJK = (cp >= 0x3040 && cp <= 0x30FF) ||
-                         (cp >= 0x4E00 && cp <= 0x9FFF);
-        if ((prevIsLatin && currIsCJK) || (prevIsCJK && currIsLatin)) {
-            cursorX += static_cast<int16_t>(CJK_TRANSITION_SPACING * scale + 0.5f);
-        }
-
-        int16_t glyphIndex = font->findGlyphIndex(cp);
-
-        // Try fallback characters if glyph not found
-        if (glyphIndex < 0) {
-            glyphIndex = font->findGlyphIndex(0xFFFD);  // � replacement character
-        }
-        if (glyphIndex < 0) {
-            glyphIndex = font->findGlyphIndex('?');
-        }
-        if (glyphIndex < 0) {
-            prevCp = cp;
-            continue;
-        }
-
-        // Get glyph info (font returns unscaled since font.scale=1.0)
-        uint32_t bitmapOffset;
-        uint8_t glyphW, glyphH, xAdvance;
-        int8_t yOffset;
-
-        if (!font->getGlyphInfo(glyphIndex, bitmapOffset, glyphW, glyphH, yOffset, xAdvance)) {
-            prevCp = cp;
-            continue;
-        }
-
-        // Scale the xAdvance from glyph data
-        uint8_t scaledXAdvance = static_cast<uint8_t>(xAdvance * scale + 0.5f);
-
-        // Draw glyph bitmap with explicit scale
-        const uint8_t* bitmap = font->getBitmap();
-        if (bitmap) {
-            int16_t gx = cursorX;
-            int16_t gy = cursorY + scaledYOffset;
-            drawGlyphBitmapScaled(gx, gy, srcW, srcH, bitmap, bitmapOffset, scale, c);
-        }
-
-        cursorX += scaledXAdvance;
-        prevCp = cp;
-    }
+void RenderContext::text(int16_t x, int16_t y, const char* str,
+                          Align align, Color c, float scale) {
+    if (!buffer) return;
+    TextRenderer tr(buffer, font);
+    tr.setClip(clipX, clipY, clipW, clipH);
+    tr.text(clipX + x, clipY + y, str, align, c, scale);
 }
 
 uint16_t RenderContext::textWidth(const char* str, float scale) const {
-    if (!str || !font) return 0;
-
-    uint16_t totalW = 0;
-    const char* ptr = str;
-    uint32_t prevCp = 0;
-
-    while (*ptr) {
-        uint32_t cp = Font::decodeUTF8(ptr);
-        if (cp == 0) break;
-
-        // Add spacing when transitioning between Latin/Cyrillic and CJK
-        bool prevIsLatin = (prevCp >= 0x21 && prevCp <= 0x7E) ||
-                           (prevCp >= 0x400 && prevCp <= 0x4FF) ||
-                           (prevCp >= 0xC0 && prevCp <= 0x2FF);
-        bool currIsLatin = (cp >= 0x21 && cp <= 0x7E) ||
-                           (cp >= 0x400 && cp <= 0x4FF) ||
-                           (cp >= 0xC0 && cp <= 0x2FF);
-        bool prevIsCJK = (prevCp >= 0x3040 && prevCp <= 0x30FF) ||
-                         (prevCp >= 0x4E00 && prevCp <= 0x9FFF);
-        bool currIsCJK = (cp >= 0x3040 && cp <= 0x30FF) ||
-                         (cp >= 0x4E00 && cp <= 0x9FFF);
-        if ((prevIsLatin && currIsCJK) || (prevIsCJK && currIsLatin)) {
-            totalW += static_cast<uint16_t>(CJK_TRANSITION_SPACING * scale + 0.5f);
-        }
-
-        int16_t glyphIndex = font->findGlyphIndex(cp);
-        if (glyphIndex < 0) {
-            glyphIndex = font->findGlyphIndex(0xFFFD);  // � replacement character
-        }
-        if (glyphIndex < 0) {
-            glyphIndex = font->findGlyphIndex('?');
-        }
-        if (glyphIndex < 0) {
-            prevCp = cp;
-            continue;
-        }
-
-        // Get actual xAdvance from glyph
-        uint32_t bitmapOffset;
-        uint8_t w, h, xAdvance;
-        int8_t yOffset;
-
-        if (font->getGlyphInfo(glyphIndex, bitmapOffset, w, h, yOffset, xAdvance)) {
-            totalW += static_cast<uint8_t>(xAdvance * scale + 0.5f);
-        }
-        prevCp = cp;
-    }
-
-    return totalW;
-}
-
-// Helper: check if codepoint is CJK (allows line break after)
-static bool isCJKCodepoint(uint32_t cp) {
-    // CJK Unified Ideographs
-    if (cp >= 0x4E00 && cp <= 0x9FFF) return true;
-    // CJK Extension A
-    if (cp >= 0x3400 && cp <= 0x4DBF) return true;
-    // Hiragana
-    if (cp >= 0x3040 && cp <= 0x309F) return true;
-    // Katakana
-    if (cp >= 0x30A0 && cp <= 0x30FF) return true;
-    // CJK Symbols and Punctuation
-    if (cp >= 0x3000 && cp <= 0x303F) return true;
-    // Fullwidth Forms
-    if (cp >= 0xFF00 && cp <= 0xFFEF) return true;
-    // Hangul Syllables (Korean)
-    if (cp >= 0xAC00 && cp <= 0xD7AF) return true;
-    return false;
+    if (!buffer) return 0;
+    TextRenderer tr(const_cast<Buffer*>(buffer), font);
+    return tr.textWidth(str, scale);
 }
 
 uint16_t RenderContext::textWrapped(int16_t x, int16_t y, uint16_t maxW, const char* str, Color c, float scale) {
     TextRenderer tr(buffer, font);
     tr.setClip(clipX, clipY, clipW, clipH);
-    return tr.textWrappedScaled(clipX + x, clipY + y, maxW, str, scale, c);
+    return tr.textWrapped(clipX + x, clipY + y, maxW, str, c, scale);
 }
 
 uint16_t RenderContext::textWrappedTruncated(int16_t x, int16_t y, uint16_t maxW, uint16_t maxH, const char* str, Color c, float scale) {
     TextRenderer tr(buffer, font);
     tr.setClip(clipX, clipY, clipW, clipH);
-    return tr.textWrappedTruncatedScaled(clipX + x, clipY + y, maxW, maxH, str, scale, c);
+    return tr.textWrappedTruncated(clipX + x, clipY + y, maxW, maxH, str, c, scale);
 }
 
 uint16_t RenderContext::getWrappedTextHeight(uint16_t maxW, const char* str, float scale) const {
     TextRenderer tr(buffer, font);
-    return tr.getWrappedTextHeightScaled(maxW, str, scale);
+    return tr.getWrappedTextHeight(maxW, str, scale);
 }
 
 // === Standard UI elements ===

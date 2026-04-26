@@ -45,31 +45,6 @@ bool TextRenderer::isLatinOrCyrillic(uint32_t cp) {
 
 // === Glyph drawing ===
 
-void TextRenderer::drawGlyphBitmap(int16_t gx, int16_t gy, uint8_t width, uint8_t height,
-                                    const uint8_t* bitmap, uint32_t offset, Color c) {
-    if (!buffer || !bitmap) return;
-
-    uint32_t bitIndex = 0;
-    for (uint8_t row = 0; row < height; row++) {
-        for (uint8_t col = 0; col < width; col++) {
-            uint32_t byteIdx = offset + (bitIndex >> 3);
-            uint8_t bitPos = 7 - (bitIndex & 7);
-            if (bitmap[byteIdx] & (1 << bitPos)) {
-                int16_t px = gx + col;
-                int16_t py = gy + row;
-                if (px >= clipX && py >= clipY &&
-                    px < clipX + static_cast<int16_t>(clipW) &&
-                    py < clipY + static_cast<int16_t>(clipH) &&
-                    px < static_cast<int16_t>(buffer->width()) &&
-                    py < static_cast<int16_t>(buffer->height())) {
-                    buffer->setPixel(px, py, c);
-                }
-            }
-            bitIndex++;
-        }
-    }
-}
-
 void TextRenderer::drawGlyphBitmapScaled(int16_t gx, int16_t gy, uint8_t srcW, uint8_t srcH,
                                           const uint8_t* bitmap, uint32_t offset, float scale, Color c) {
     if (!buffer || !bitmap || scale <= 0) return;
@@ -140,7 +115,7 @@ uint16_t TextRenderer::textWidth(const char* str, float scale) const {
         int8_t yOffset;
 
         if (font->getGlyphInfo(glyphIndex, bitmapOffset, glyphW, glyphH, yOffset, xAdvance)) {
-            // Round each advance individually, same as in textScaled()
+            // Round each advance individually so width matches what text() draws.
             width += static_cast<uint16_t>(xAdvance * scale + 0.5f);
         }
         prevCp = cp;
@@ -202,20 +177,6 @@ void TextRenderer::text(int16_t x, int16_t y, const char* str, Align align, Colo
 // === Wrapped text ===
 
 uint16_t TextRenderer::textWrapped(int16_t x, int16_t y, uint16_t maxW, const char* str, Color c, float scale) {
-    return textWrappedScaled(x, y, maxW, str, scale, c);
-}
-
-uint16_t TextRenderer::getWrappedTextHeight(uint16_t maxW, const char* str, float scale) const {
-    return getWrappedTextHeightScaled(maxW, str, scale);
-}
-
-uint16_t TextRenderer::textWrappedTruncated(int16_t x, int16_t y, uint16_t maxW, uint16_t maxH, const char* str, Color c, float scale) {
-    return textWrappedTruncatedScaled(x, y, maxW, maxH, str, scale, c);
-}
-
-// === Scaled wrapped text ===
-
-uint16_t TextRenderer::textWrappedScaled(int16_t x, int16_t y, uint16_t maxW, const char* str, float scale, Color c) {
     if (!str || !font || !buffer || scale <= 0) return 0;
 
     uint16_t lineH = static_cast<uint16_t>(font->lineHeight() * scale + 0.5f);
@@ -344,7 +305,7 @@ uint16_t TextRenderer::textWrappedScaled(int16_t x, int16_t y, uint16_t maxW, co
     return cursorY - y + lineH;
 }
 
-uint16_t TextRenderer::getWrappedTextHeightScaled(uint16_t maxW, const char* str, float scale) const {
+uint16_t TextRenderer::getWrappedTextHeight(uint16_t maxW, const char* str, float scale) const {
     if (!str || !font || scale <= 0) return 0;
 
     uint16_t lineH = static_cast<uint16_t>(font->lineHeight() * scale + 0.5f);
@@ -466,15 +427,15 @@ uint16_t TextRenderer::getWrappedTextHeightScaled(uint16_t maxW, const char* str
     return totalH;
 }
 
-uint16_t TextRenderer::textWrappedTruncatedScaled(int16_t x, int16_t y, uint16_t maxW, uint16_t maxH, const char* str, float scale, Color c) {
+uint16_t TextRenderer::textWrappedTruncated(int16_t x, int16_t y, uint16_t maxW, uint16_t maxH, const char* str, Color c, float scale) {
     if (!str || !font || !buffer || scale <= 0) return 0;
 
     uint16_t lineH = static_cast<uint16_t>(font->lineHeight() * scale + 0.5f);
 
     // Simple implementation - just use scaled wrapped with height limit check
-    uint16_t height = getWrappedTextHeightScaled(maxW, str, scale);
+    uint16_t height = getWrappedTextHeight(maxW, str, scale);
     if (height <= maxH) {
-        return textWrappedScaled(x, y, maxW, str, scale, c);
+        return textWrapped(x, y, maxW, str, c, scale);
     }
 
     // Truncate - render what fits and add ellipsis
@@ -492,7 +453,7 @@ uint16_t TextRenderer::textWrappedTruncatedScaled(int16_t x, int16_t y, uint16_t
             cursorY += lineH;
             ptr++;
             if (cursorY > maxY) {
-                textScaled(cursorX, cursorY - lineH, "...", scale, Align::LEFT, c);
+                text(cursorX, cursorY - lineH, "...", Align::LEFT, c, scale);
                 return cursorY - y;
             }
             continue;
@@ -537,14 +498,14 @@ uint16_t TextRenderer::textWrappedTruncatedScaled(int16_t x, int16_t y, uint16_t
                 cursorX = x;
                 cursorY += lineH;
                 if (cursorY > maxY) {
-                    textScaled(x + maxW - textWidthScaled("...", scale), cursorY - lineH, "...", scale, Align::LEFT, c);
+                    text(x + maxW - textWidth("...", scale), cursorY - lineH, "...", Align::LEFT, c, scale);
                     return cursorY - y;
                 }
             }
             if (cursorY >= maxY) {
-                uint16_t ellipsisW = textWidthScaled("...", scale);
+                uint16_t ellipsisW = textWidth("...", scale);
                 if (cursorX + scaledXAdv + ellipsisW > x + maxW) {
-                    textScaled(cursorX, cursorY, "...", scale, Align::LEFT, c);
+                    text(cursorX, cursorY, "...", Align::LEFT, c, scale);
                     return cursorY - y + lineH;
                 }
             }
@@ -580,7 +541,7 @@ uint16_t TextRenderer::textWrappedTruncatedScaled(int16_t x, int16_t y, uint16_t
                 cursorX = x;
                 cursorY += lineH;
                 if (cursorY > maxY) {
-                    textScaled(x + maxW - textWidthScaled("...", scale), cursorY - lineH, "...", scale, Align::LEFT, c);
+                    text(x + maxW - textWidth("...", scale), cursorY - lineH, "...", Align::LEFT, c, scale);
                     return cursorY - y;
                 }
             }

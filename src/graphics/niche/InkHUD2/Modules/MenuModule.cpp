@@ -236,7 +236,6 @@ void MenuModule::renderStatusBar(RenderContext& ctx) {
     const Layout* layout = ctx.getLayout();
     if (!layout) return;
 
-    uint16_t lineH = layout->lineHeight();
     uint16_t margin = layout->statusBarMargin();
     int16_t centerX = ctx.width() / 2;
     int16_t screenW = ctx.width();
@@ -263,8 +262,8 @@ void MenuModule::renderStatusBar(RenderContext& ctx) {
     char dateStr[16];
     snprintf(dateStr, sizeof(dateStr), "%04d/%02d/%02d", year, month, day);
 
-    float smallScale = layout->effectiveSmallScale();
-    uint16_t smallLineH = layout->smallLineHeight();
+    float scale = Layout::bodyScale;
+    uint16_t lineH = layout->bodyLineHeight();
 
     if (layout->isVertical()) {
         // Vertical mode:
@@ -273,7 +272,7 @@ void MenuModule::renderStatusBar(RenderContext& ctx) {
         // Line 3: Date centered
         int16_t line1Y = margin;
         int16_t line2Y = margin + lineH + layout->elementSpacing();
-        int16_t line3Y = line2Y + smallLineH + layout->elementSpacing();
+        int16_t line3Y = line2Y + lineH + layout->elementSpacing();
 
         float batVolts = 0.0f;
         if (powerStatus) {
@@ -286,16 +285,16 @@ void MenuModule::renderStatusBar(RenderContext& ctx) {
         ctx.text(centerX, line1Y, timeStr, Align::CENTER, Color::BLACK);
 
         // Line 2: Bat left, FW right
-        ctx.textScaled(margin, line2Y, batStr, smallScale, Align::LEFT, Color::BLACK);
-        ctx.textScaled(screenW - margin, line2Y, firmwareVersion, smallScale, Align::RIGHT, Color::BLACK);
+        ctx.text(margin, line2Y, batStr, Align::LEFT, Color::BLACK, scale);
+        ctx.text(screenW - margin, line2Y, firmwareVersion, Align::RIGHT, Color::BLACK, scale);
 
         // Dotted separator between Bat and FW
-        for (int16_t py = line2Y; py < line2Y + smallLineH; py += layout->dotSpacing()) {
+        for (int16_t py = line2Y; py < line2Y + lineH; py += layout->dotSpacing()) {
             ctx.pixel(centerX, py, Color::BLACK);
         }
 
         // Line 3: Date centered
-        ctx.textScaled(centerX, line3Y, dateStr, smallScale, Align::CENTER, Color::BLACK);
+        ctx.text(centerX, line3Y, dateStr, Align::CENTER, Color::BLACK, scale);
     } else {
         // Normal mode: Time centered, then Bat | Date | FW row
         ctx.text(centerX, margin, timeStr, Align::CENTER, Color::BLACK);
@@ -310,9 +309,9 @@ void MenuModule::renderStatusBar(RenderContext& ctx) {
         snprintf(batStr, sizeof(batStr), "%.2fV", batVolts);
 
         // Measure text widths
-        uint16_t batWidth = ctx.textWidthScaled(batStr, smallScale);
-        uint16_t dateWidth = ctx.textWidthScaled(dateStr, smallScale);
-        uint16_t fwWidth = ctx.textWidthScaled(firmwareVersion, smallScale);
+        uint16_t batWidth = ctx.textWidth(batStr, scale);
+        uint16_t dateWidth = ctx.textWidth(dateStr, scale);
+        uint16_t fwWidth = ctx.textWidth(firmwareVersion, scale);
 
         // Proportional columns
         uint16_t colPadding = layout->menuColumnPadding();
@@ -334,16 +333,16 @@ void MenuModule::renderStatusBar(RenderContext& ctx) {
         int16_t sep1X = margin + col1Width + sepOffset;
         int16_t sep2X = margin + col1Width + col2Width + sepOffset;
 
-        ctx.textScaled(col1Center, statusY, "Bat", smallScale, Align::CENTER, Color::BLACK);
-        ctx.textScaled(col1Center, statusY + smallLineH, batStr, smallScale, Align::CENTER, Color::BLACK);
+        ctx.text(col1Center, statusY, "Bat", Align::CENTER, Color::BLACK, scale);
+        ctx.text(col1Center, statusY + lineH, batStr, Align::CENTER, Color::BLACK, scale);
 
-        ctx.textScaled(col2Center, statusY, "Date", smallScale, Align::CENTER, Color::BLACK);
-        ctx.textScaled(col2Center, statusY + smallLineH, dateStr, smallScale, Align::CENTER, Color::BLACK);
+        ctx.text(col2Center, statusY, "Date", Align::CENTER, Color::BLACK, scale);
+        ctx.text(col2Center, statusY + lineH, dateStr, Align::CENTER, Color::BLACK, scale);
 
-        ctx.textScaled(col3Center, statusY, "FW", smallScale, Align::CENTER, Color::BLACK);
-        ctx.textScaled(col3Center, statusY + smallLineH, firmwareVersion, smallScale, Align::CENTER, Color::BLACK);
+        ctx.text(col3Center, statusY, "FW", Align::CENTER, Color::BLACK, scale);
+        ctx.text(col3Center, statusY + lineH, firmwareVersion, Align::CENTER, Color::BLACK, scale);
 
-        for (int16_t py = statusY; py < statusY + smallLineH * 2; py += layout->dotSpacing()) {
+        for (int16_t py = statusY; py < statusY + lineH * 2; py += layout->dotSpacing()) {
             ctx.pixel(sep1X, py, Color::BLACK);
             ctx.pixel(sep2X, py, Color::BLACK);
         }
@@ -379,8 +378,8 @@ void MenuModule::renderMenu(RenderContext& ctx) {
         renderStatusBar(ctx);
 
         // Calculate where status bar ends
-        uint16_t smallLineH = layout->smallLineHeight();
-        int16_t statusBarEnd = layout->statusBarMargin() + lineH + layout->elementSpacing() + smallLineH * 2 + layout->elementSpacing();
+        uint16_t lineH = layout->bodyLineHeight();
+        int16_t statusBarEnd = layout->statusBarMargin() + lineH + layout->elementSpacing() + lineH * 2 + layout->elementSpacing();
 
         // Dotted separator line
         for (int16_t x = margin; x < ctx.width() - margin; x += layout->dotSpacing()) {
@@ -531,8 +530,8 @@ void MenuModule::renderAlert(RenderContext& ctx) {
         renderStatusBar(ctx);
 
         // Calculate content area (below status bar)
-        uint16_t smallLineH = layout->smallLineHeight();
-        int16_t statusBarEnd = layout->statusBarMargin() + lineH + layout->elementSpacing() + smallLineH * 2 + layout->elementSpacing();
+        uint16_t lineH = layout->bodyLineHeight();
+        int16_t statusBarEnd = layout->statusBarMargin() + lineH + layout->elementSpacing() + lineH * 2 + layout->elementSpacing();
 
         // Dotted separator
         for (int16_t x = margin; x < ctx.width() - margin; x += layout->dotSpacing()) {
@@ -584,7 +583,7 @@ void MenuModule::renderShutdown(RenderContext& ctx) {
     // "Shutting Down..." below logo - scale down for narrow screens
     int16_t textY = logoCY + logoH / 2 + layout->lineHeight();
     float scale = Layout::bodyScale;
-    ctx.textScaled(centerX, textY, "Shutting Down...", scale, Align::CENTER, Color::BLACK);
+    ctx.text(centerX, textY, "Shutting Down...", Align::CENTER, Color::BLACK, scale);
 }
 
 void MenuModule::renderShutdownFinal(RenderContext& ctx) {

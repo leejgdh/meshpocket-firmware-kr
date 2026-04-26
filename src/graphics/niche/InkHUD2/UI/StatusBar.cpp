@@ -26,10 +26,10 @@ int16_t StatusBar::render(int16_t y, const char* title, Icon icon, bool centered
 
     // Centered mode: just title in center, no icon
     if (centered) {
-        uint8_t scaledTextH = static_cast<uint8_t>(lineH * TITLE_SCALE + 0.5f);
+        uint8_t scaledTextH = static_cast<uint8_t>(lineH * Layout::headerScale + 0.5f);
         int16_t textY = headerCenterY - scaledTextH / 2;
         int16_t centerX = buffer->width() / 2;
-        textRenderer->textScaled(centerX, textY, title, TITLE_SCALE, Align::CENTER, Color::BLACK);
+        textRenderer->text(centerX, textY, title, Align::CENTER, Color::BLACK, Layout::headerScale);
 
         // Separator
         int16_t sepY = y + lineH + 2;
@@ -68,7 +68,7 @@ int16_t StatusBar::render(int16_t y, const char* title, Icon icon, bool centered
 
     // Title text - limit width to not overlap battery
     int16_t textX = (icon != Icon::NONE) ? (padding + iconW + padding) : padding;
-    uint8_t scaledTextH = static_cast<uint8_t>(lineH * TITLE_SCALE + 0.5f);
+    uint8_t scaledTextH = static_cast<uint8_t>(lineH * Layout::headerScale + 0.5f);
     int16_t textY = headerCenterY - scaledTextH / 2;
 
     // Calculate max width for title (leave space for battery)
@@ -77,8 +77,8 @@ int16_t StatusBar::render(int16_t y, const char* title, Icon icon, bool centered
 
     // Truncate title if needed
     char truncBuf[64];
-    TextUtils::truncate(textRenderer, title, maxTitleW, TITLE_SCALE, truncBuf, sizeof(truncBuf));
-    textRenderer->textScaled(textX, textY, truncBuf, TITLE_SCALE, Align::LEFT, Color::BLACK);
+    TextUtils::truncate(textRenderer, title, maxTitleW, Layout::headerScale, truncBuf, sizeof(truncBuf));
+    textRenderer->text(textX, textY, truncBuf, Align::LEFT, Color::BLACK, Layout::headerScale);
 
     // Separator
     int16_t sepY = y + lineH + 2;

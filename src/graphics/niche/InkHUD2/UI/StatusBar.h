@@ -41,12 +41,6 @@ private:
     Buffer* buffer;
     const Layout* layout;
     TextRenderer* textRenderer;
-
-public:
-    // Scale for title text. Mirrors Layout::headerScale and is kept here
-    // as a convenience for HeaderText, which is built before a Layout
-    // instance is available. Do not change without updating Layout::headerScale.
-    static constexpr float TITLE_SCALE = Layout::headerScale;
 };
 
 } // namespace InkHUD2

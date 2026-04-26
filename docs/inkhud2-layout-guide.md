@@ -72,46 +72,26 @@
 
 ---
 
-## 2. 토큰 카탈로그 — 의미 기반 토큰 시스템
+## 2. 토큰 카탈로그 — 두 tier 시스템
 
-[`src/graphics/niche/InkHUD2/Core/Layout.h`](../src/graphics/niche/InkHUD2/Core/Layout.h) 가 디자인 시스템의 단일 소스. 모든 모듈은 의미 기반 alias 만 사용한다.
+[`src/graphics/niche/InkHUD2/Core/Layout.h`](../src/graphics/niche/InkHUD2/Core/Layout.h) 가 디자인 시스템의 **단일** 소스. 모듈은 `bodyScale` 또는 `headerScale` 둘 중 하나를 사용한다. legacy alias 는 모두 제거됨.
 
-### 2.1 폰트 스케일 (의미 기반 토큰)
+### 2.1 폰트 스케일
 
 | 토큰 | 값 | 의미 / 사용 |
 |---|---|---|
-| `Layout::bodyScale` | **1.00f** | 기본 본문 텍스트 (NodeList shortName, ChatView 본문, Boot pairing PIN 등) |
-| `Layout::bodyDenseScale` | **0.89f** | elongated 화면용 본문 압축 (ChatView elongated 본문) |
-| `Layout::titleScale` | **0.78f** | 헤더/StatusBar 제목, 보조 라벨 (NodeList row 시간 스탬프) |
-| `Layout::captionScale` | **0.78f** | 보조 텍스트 (NodeList longName-elongated, hint, ChatView info 라인) |
-| `Layout::metaScale` | **0.67f** | 가장 작은 메타 정보 (NodeList longName-elongated). 이보다 작게 쓰지 말 것 |
-| `Layout::menuItemScale` | **0.89f** | 메뉴 항목 (MenuModule list rows) |
+| `Layout::bodyScale` | **0.67f** | 모든 primary content (NodeList rows, ChatView messages, BootModule pairing strings, MenuModule items, footer hints, map labels). |
+| `Layout::headerScale` | **0.78f** | 화면 상단 헤더 전용 (StatusBar 제목). body 보다 살짝 커서 헤더가 별도 밴드로 읽힘. inline emphasis 에는 쓰지 말 것. |
 
-`titleScale = captionScale = 0.78f` 는 **현재 같은 값** 이지만 의미가 다르므로 분리 유지. 미래에 헤더/캡션 톤이 달라지면 둘 중 하나만 조정 가능.
-
-`bodyDenseScale = menuItemScale = 0.89f` 도 같은 이유 — 채팅 본문과 메뉴 항목이 우연히 같은 사이즈일 뿐, 한 쪽만 조정 가능해야 함.
-
-### 2.1.1 Legacy alias (backward compat)
-
-| Legacy | → 새 토큰 | 비고 |
-|---|---|---|
-| `Layout::smallScale` | `captionScale` | 기존 호출 사이트 다수 (MapModule labels, MenuModule, NodeListModule.h truncate default) |
-| `Layout::menuScale` | `menuItemScale` | |
-| `Layout::hintScale` | `captionScale` | |
-| `Layout::verticalScale` | `menuItemScale` | |
-
-⚠️ **결합 주의**: legacy alias 가 새 토큰을 가리키므로, `captionScale` 을 조정하면 모든 `smallScale` 호출 사이트도 같이 움직임. 의도하지 않으면 alias 를 자체 literal 로 분리.
+새 의미가 필요하면 토큰을 **추가**해야지 모듈 로컬 상수로 우회 금지.
 
 ### 2.2 라인 높이
 
 | 헬퍼 | 의미 |
 |---|---|
-| `layout->lineHeight()` | 기본 폰트 (1.0) 의 라인 높이 |
-| `layout->smallLineHeight()` | smallScale 폰트의 라인 높이 |
-| `layout->menuLineHeight()` | menuScale 폰트의 라인 높이 |
-| `layout->hintLineHeight()` | hintScale 폰트의 라인 높이 |
-
-라인 높이 헬퍼는 잘 마련돼있음. 단, 모듈에서 `static_cast<uint16_t>(lineH * 0.67f)` 같은 매직 곱셈을 직접 하는 곳이 있어 라인 높이도 토큰화 필요.
+| `layout->lineHeight()` | 폰트 native 라인 높이 (= 18px on UnifiedFont18px) |
+| `layout->bodyLineHeight()` | `lineHeight() * bodyScale` |
+| `layout->headerLineHeight()` | `lineHeight() * headerScale` |
 
 ### 2.3 간격
 

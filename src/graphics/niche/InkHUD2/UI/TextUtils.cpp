@@ -27,7 +27,7 @@ void TextUtils::truncate(const RenderContext& ctx, const char* text, uint16_t ma
     }
 
     // Check if text fits
-    uint16_t textW = ctx.textWidthScaled(text, scale);
+    uint16_t textW = ctx.textWidth(text, scale);
     if (textW <= maxWidth) {
         strncpy(outBuf, text, outBufSize - 1);
         outBuf[outBufSize - 1] = '\0';
@@ -35,7 +35,7 @@ void TextUtils::truncate(const RenderContext& ctx, const char* text, uint16_t ma
     }
 
     // Need to truncate
-    uint16_t ellipsisW = ctx.textWidthScaled(ELLIPSIS, scale);
+    uint16_t ellipsisW = ctx.textWidth(ELLIPSIS, scale);
     if (ellipsisW >= maxWidth) {
         outBuf[0] = '\0';
         return;
@@ -50,7 +50,7 @@ void TextUtils::truncate(const RenderContext& ctx, const char* text, uint16_t ma
     for (size_t i = 1; i <= len; i++) {
         strncpy(outBuf, text, i);
         outBuf[i] = '\0';
-        if (ctx.textWidthScaled(outBuf, scale) > availW) break;
+        if (ctx.textWidth(outBuf, scale) > availW) break;
         fitLen = i;
     }
 
@@ -73,7 +73,7 @@ void TextUtils::truncate(const TextRenderer* renderer, const char* text, uint16_
     }
 
     // Check if text fits
-    uint16_t textW = renderer->textWidthScaled(text, scale);
+    uint16_t textW = renderer->textWidth(text, scale);
     if (textW <= maxWidth) {
         strncpy(outBuf, text, outBufSize - 1);
         outBuf[outBufSize - 1] = '\0';
@@ -81,7 +81,7 @@ void TextUtils::truncate(const TextRenderer* renderer, const char* text, uint16_
     }
 
     // Need to truncate
-    uint16_t ellipsisW = renderer->textWidthScaled(ELLIPSIS, scale);
+    uint16_t ellipsisW = renderer->textWidth(ELLIPSIS, scale);
     if (ellipsisW >= maxWidth) {
         outBuf[0] = '\0';
         return;
@@ -96,7 +96,7 @@ void TextUtils::truncate(const TextRenderer* renderer, const char* text, uint16_
     for (size_t i = 1; i <= len; i++) {
         strncpy(outBuf, text, i);
         outBuf[i] = '\0';
-        if (renderer->textWidthScaled(outBuf, scale) > availW) break;
+        if (renderer->textWidth(outBuf, scale) > availW) break;
         fitLen = i;
     }
 
@@ -113,12 +113,12 @@ void TextUtils::truncate(const TextRenderer* renderer, const char* text, uint16_
 
 bool TextUtils::fits(const RenderContext& ctx, const char* text, uint16_t maxWidth, float scale) {
     if (!text) return true;
-    return ctx.textWidthScaled(text, scale) <= maxWidth;
+    return ctx.textWidth(text, scale) <= maxWidth;
 }
 
 bool TextUtils::fits(const TextRenderer* renderer, const char* text, uint16_t maxWidth, float scale) {
     if (!renderer || !text) return true;
-    return renderer->textWidthScaled(text, scale) <= maxWidth;
+    return renderer->textWidth(text, scale) <= maxWidth;
 }
 
 } // namespace InkHUD2

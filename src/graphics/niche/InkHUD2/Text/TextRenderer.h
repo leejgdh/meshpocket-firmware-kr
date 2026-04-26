@@ -41,22 +41,6 @@ public:
     uint16_t getWrappedTextHeight(uint16_t maxW, const char* str,
                                   float scale = Layout::bodyScale) const;
 
-    // Legacy *Scaled API. Two flavors:
-    //   - text/textWidth: inline wrappers that delegate to the unified
-    //     functions above (cpp definitions for *Scaled were merged in).
-    //   - textWrapped*/getWrappedTextHeight*: still backed by separate cpp
-    //     definitions (phase B will fold them in). External declarations
-    //     so callers compile.
-    inline void textScaled(int16_t x, int16_t y, const char* str, float scale,
-                           Align align = Align::LEFT, Color c = Color::BLACK) {
-        text(x, y, str, align, c, scale);
-    }
-    inline uint16_t textWidthScaled(const char* str, float scale) const {
-        return textWidth(str, scale);
-    }
-    uint16_t textWrappedScaled(int16_t x, int16_t y, uint16_t maxW, const char* str, float scale, Color c = Color::BLACK);
-    uint16_t textWrappedTruncatedScaled(int16_t x, int16_t y, uint16_t maxW, uint16_t maxH, const char* str, float scale, Color c = Color::BLACK);
-    uint16_t getWrappedTextHeightScaled(uint16_t maxW, const char* str, float scale) const;
 
     // === Font access ===
     const Font* getFont() const { return font; }
@@ -67,8 +51,6 @@ public:
     static bool isLatinOrCyrillic(uint32_t cp);
 
 private:
-    void drawGlyphBitmap(int16_t gx, int16_t gy, uint8_t width, uint8_t height,
-                         const uint8_t* bitmap, uint32_t offset, Color c);
     void drawGlyphBitmapScaled(int16_t gx, int16_t gy, uint8_t srcW, uint8_t srcH,
                                const uint8_t* bitmap, uint32_t offset, float scale, Color c);
 

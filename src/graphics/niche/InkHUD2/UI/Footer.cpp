@@ -87,7 +87,7 @@ int16_t Footer::renderTabs(const std::vector<TabInfo>& tabs, size_t activeIndex,
         // Align with battery icon right edge
         int16_t nameX = screenW - padding - 2;
         // Center text vertically in tab area
-        uint16_t scaledH = static_cast<uint16_t>(textRenderer->lineHeight() * TEXT_SCALE);
+        uint16_t scaledH = static_cast<uint16_t>(textRenderer->lineHeight() * Layout::bodyScale);
         int16_t nameY = tabY + (tabH - scaledH) / 2;
 
         // Prefix with # or @ based on name
@@ -109,8 +109,8 @@ int16_t Footer::renderTabs(const std::vector<TabInfo>& tabs, size_t activeIndex,
 
         // Truncate if needed
         char truncBuf[32];
-        TextUtils::truncate(textRenderer, displayName, maxNameW, TEXT_SCALE, truncBuf, sizeof(truncBuf));
-        textRenderer->textScaled(nameX, nameY, truncBuf, TEXT_SCALE, Align::RIGHT, Color::BLACK);
+        TextUtils::truncate(textRenderer, displayName, maxNameW, Layout::bodyScale, truncBuf, sizeof(truncBuf));
+        textRenderer->text(nameX, nameY, truncBuf, Align::RIGHT, Color::BLACK, Layout::bodyScale);
     }
 
     return contentBottom;
@@ -123,19 +123,19 @@ int16_t Footer::renderHint(const char* hint) {
 
     uint16_t screenW = buffer->width();
     uint16_t screenH = buffer->height();
-    uint16_t hintLineH = layout->hintLineHeight();
+    uint16_t hintLineH = layout->bodyLineHeight();
     uint16_t spacing = layout->elementSpacing();
-    float scale = layout->effectiveHintScale();
+    float scale = Layout::bodyScale;
 
     // Check if hint fits on one line
-    uint16_t hintWidth = textRenderer->textWidthScaled(hint, scale);
+    uint16_t hintWidth = textRenderer->textWidth(hint, scale);
     uint16_t margin = layout->margin();
 
     if (hintWidth <= screenW - 2 * margin) {
         // Single line
         int16_t hintY = screenH - hintLineH - spacing;
         int16_t centerX = screenW / 2;
-        textRenderer->textScaled(centerX, hintY, hint, scale, Align::CENTER, Color::BLACK);
+        textRenderer->text(centerX, hintY, hint, Align::CENTER, Color::BLACK, scale);
         return hintY - spacing;
     } else {
         // Two lines for vertical mode - split at space before "Hold"
@@ -144,8 +144,8 @@ int16_t Footer::renderHint(const char* hint) {
         int16_t line2Y = screenH - hintLineH - spacing;
         int16_t line1Y = line2Y - hintLineH;
         int16_t centerX = screenW / 2;
-        textRenderer->textScaled(centerX, line1Y, line1, scale, Align::CENTER, Color::BLACK);
-        textRenderer->textScaled(centerX, line2Y, line2, scale, Align::CENTER, Color::BLACK);
+        textRenderer->text(centerX, line1Y, line1, Align::CENTER, Color::BLACK, scale);
+        textRenderer->text(centerX, line2Y, line2, Align::CENTER, Color::BLACK, scale);
         return line1Y - spacing;
     }
 }

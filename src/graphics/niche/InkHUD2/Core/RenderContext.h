@@ -116,31 +116,6 @@ public:
     uint16_t getWrappedTextHeight(uint16_t maxW, const char* str,
                                   float scale = Layout::bodyScale) const;
 
-    // Legacy *Scaled wrappers — forward to the unified text() signatures.
-    // Prefer the no-suffix functions in new code; these will be removed.
-    inline void textScaled(int16_t x, int16_t y, const char* str, float scale,
-                           Align align = Align::LEFT, Color c = Color::BLACK) {
-        text(x, y, str, align, c, scale);
-    }
-    inline uint16_t textWidthScaled(const char* str, float scale) const {
-        return textWidth(str, scale);
-    }
-    inline uint16_t textWrappedScaled(int16_t x, int16_t y, uint16_t maxW,
-                                       const char* str, float scale,
-                                       Color c = Color::BLACK) {
-        return textWrapped(x, y, maxW, str, c, scale);
-    }
-    inline uint16_t textWrappedTruncatedScaled(int16_t x, int16_t y,
-                                                uint16_t maxW, uint16_t maxH,
-                                                const char* str, float scale,
-                                                Color c = Color::BLACK) {
-        return textWrappedTruncated(x, y, maxW, maxH, str, c, scale);
-    }
-    inline uint16_t getWrappedTextHeightScaled(uint16_t maxW, const char* str,
-                                                float scale) const {
-        return getWrappedTextHeight(maxW, str, scale);
-    }
-
     // === Standard UI elements ===
 
     void header(const char* text, Color c = Color::BLACK);
@@ -160,10 +135,6 @@ public:
 private:
     void setPixelClipped(int16_t x, int16_t y, Color c);
     bool inClip(int16_t x, int16_t y) const;
-    void drawGlyphBitmap(int16_t gx, int16_t gy, uint8_t width, uint8_t height,
-                         const uint8_t* bitmap, uint32_t offset, Color c);
-    void drawGlyphBitmapScaled(int16_t gx, int16_t gy, uint8_t srcW, uint8_t srcH,
-                               const uint8_t* bitmap, uint32_t offset, float scale, Color c);
 
     Buffer* buffer;
     const Font* font;

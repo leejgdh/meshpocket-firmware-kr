@@ -103,7 +103,7 @@ void ChatView::render(const ContentArea& area, const std::vector<ChatMessage>& m
         }
 
         // Wrapped body height (body tier).
-        uint16_t bodyH = textRenderer->getWrappedTextHeightScaled(msgW, msg.text, Layout::bodyScale);
+        uint16_t bodyH = textRenderer->getWrappedTextHeight(msgW, msg.text, Layout::bodyScale);
         uint16_t totalMsgH = infoLineH + infoPadding + bodyH;
 
         // Available space - need room for info line + padding + at least one line of body
@@ -135,11 +135,11 @@ void ChatView::render(const ContentArea& area, const std::vector<ChatMessage>& m
         }
 
         // Draw info line (body tier).
-        uint16_t infoW = textRenderer->textWidthScaled(info, Layout::bodyScale);
+        uint16_t infoW = textRenderer->textWidth(info, Layout::bodyScale);
         if (!outgoing) {
-            textRenderer->textScaled(msgL, infoY, info, Layout::bodyScale, Align::LEFT, Color::BLACK);
+            textRenderer->text(msgL, infoY, info, Align::LEFT, Color::BLACK, Layout::bodyScale);
         } else {
-            textRenderer->textScaled(msgR, infoY, info, Layout::bodyScale, Align::RIGHT, Color::BLACK);
+            textRenderer->text(msgR, infoY, info, Align::RIGHT, Color::BLACK, Layout::bodyScale);
         }
 
         // Dotted underline
@@ -159,15 +159,15 @@ void ChatView::render(const ContentArea& area, const std::vector<ChatMessage>& m
         // Draw message body (body tier; outgoing right-aligned if it fits
         // on a single line, otherwise wrap-left like inbound).
         if (truncated) {
-            textRenderer->textWrappedTruncatedScaled(msgL, bodyY, msgW, maxBodyH, msg.text, Layout::bodyScale, Color::BLACK);
+            textRenderer->textWrappedTruncated(msgL, bodyY, msgW, maxBodyH, msg.text, Color::BLACK, Layout::bodyScale);
         } else if (!outgoing) {
-            textRenderer->textWrappedScaled(msgL, bodyY, msgW, msg.text, Layout::bodyScale, Color::BLACK);
+            textRenderer->textWrapped(msgL, bodyY, msgW, msg.text, Color::BLACK, Layout::bodyScale);
         } else {
-            uint16_t textW = textRenderer->textWidthScaled(msg.text, Layout::bodyScale);
+            uint16_t textW = textRenderer->textWidth(msg.text, Layout::bodyScale);
             if (textW < msgW) {
-                textRenderer->textScaled(msgR, bodyY, msg.text, Layout::bodyScale, Align::RIGHT, Color::BLACK);
+                textRenderer->text(msgR, bodyY, msg.text, Align::RIGHT, Color::BLACK, Layout::bodyScale);
             } else {
-                textRenderer->textWrappedScaled(msgL, bodyY, msgW, msg.text, Layout::bodyScale, Color::BLACK);
+                textRenderer->textWrapped(msgL, bodyY, msgW, msg.text, Color::BLACK, Layout::bodyScale);
             }
         }
 

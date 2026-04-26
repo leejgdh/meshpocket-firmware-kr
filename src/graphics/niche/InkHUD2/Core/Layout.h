@@ -28,59 +28,25 @@ public:
     static constexpr uint16_t MIN_DIMENSION = 100;  // Below this, don't scale down further
 
     // ========================================================================
-    // Font Scales — meaning-based design tokens.
+    // Font Scales — design system, two tiers only.
     //
-    // Modules MUST use these aliases instead of magic literals (0.78f /
-    // 0.89f / 0.67f / 1.0f). New tokens go here, not in module-local
-    // constants. See docs/inkhud2-layout-guide.md.
-    //
-    // Usage map:
-    //   bodyScale     — primary readable text (NodeList shortName, ChatView
-    //                   message body on square screens, BootModule pin on
-    //                   landscape, etc.)
-    //   titleScale    — header/status-bar titles, minor labels alongside
-    //                   primary content (NodeList row time stamp).
-    //   captionScale  — secondary text (NodeList longName on elongated, hint
-    //                   strings, ChatView info line).
-    //   metaScale     — finest meta info (NodeList longName on elongated,
-    //                   smallest labels). Don't use below this size.
-    //   menuItemScale — list rows in MenuModule and the dense body in
-    //                   ChatView's elongated mode.
+    // Modules MUST use one of these two constants. No magic literals
+    // (0.67f / 0.78f / etc.), no module-local aliases. See
+    // docs/inkhud2-layout-guide.md.
     // ========================================================================
-    // Two-tier system: every textual element is either body or header.
-    // Modules pick one of the two; nothing else.
+    // Two-tier system. Every textual element MUST use one of these two
+    // and only these two. No legacy aliases — call sites that want a
+    // different meaning must add a new tier here, not invent local names.
     //
-    //   bodyScale   — all primary content. NodeList rows, MenuModule items,
-    //                 ChatView messages (info + body), BootModule pairing
-    //                 strings, hints. The "regular" tier.
+    //   bodyScale   — all primary content (NodeList rows, ChatView
+    //                 messages, BootModule pairing strings, MenuModule
+    //                 items, footer hints, map labels). The "regular"
+    //                 tier.
     //   headerScale — ONLY for top-of-screen headers (StatusBar title).
     //                 Slightly larger than body so the header reads as a
     //                 distinct band. Don't reuse for inline emphasis.
     static constexpr float bodyScale   = 0.67f;
     static constexpr float headerScale = 0.78f;
-
-    // ----- Legacy meaning-tokens, kept for source compatibility but now -----
-    // ----- collapse to one of the two tiers above. Don't add new uses.   -----
-    static constexpr float bodyDenseScale = bodyScale;
-    static constexpr float titleScale     = headerScale;
-    static constexpr float captionScale   = bodyScale;
-    static constexpr float metaScale      = bodyScale;
-    static constexpr float menuItemScale  = bodyScale;
-
-    // Legacy names — kept as aliases so we don't have to touch every call
-    // site in one go. Prefer the meaning-based names above for new code.
-    //
-    // ⚠️ COUPLING WARNING:
-    // Retuning a meaning-based token (e.g. tightening captionScale to
-    // 0.75f) silently moves every legacy-aliased call site too —
-    // including pixel-sensitive paths in MapModule labels, MenuModule,
-    // and others. If you change a base token, sweep BOTH the new-name
-    // and legacy-name call sites, or split these aliases into their own
-    // literals to break the coupling intentionally.
-    static constexpr float smallScale    = captionScale;
-    static constexpr float menuScale     = menuItemScale;
-    static constexpr float hintScale     = captionScale;
-    static constexpr float verticalScale = menuItemScale;
 
     // ========================================================================
     // Base values (for REFERENCE_SIZE, scaled dynamically)
@@ -145,16 +111,6 @@ public:
     bool isVertical() const { return screenH > screenW * 1.5f; }  // Tall narrow screen
     bool isNarrow() const { return screenW < 150; }  // Very narrow (e.g., 128px)
 
-    // Effective scale for text - smaller in vertical mode
-    float effectiveScale(float baseScale) const {
-        return isVertical() ? baseScale * verticalScale : baseScale;
-    }
-
-    // Effective menu scale (for vertical mode)
-    float effectiveMenuScale() const { return effectiveScale(menuScale); }
-    float effectiveSmallScale() const { return effectiveScale(smallScale); }
-    float effectiveHintScale() const { return effectiveScale(hintScale); }
-
     // ========================================================================
     // Font metrics (from font, with scaling for fallback)
     // ========================================================================
@@ -170,25 +126,6 @@ public:
     }
     uint16_t headerLineHeight() const {
         return static_cast<uint16_t>(lineHeight() * headerScale);
-    }
-
-    // Legacy aliases — collapse to body tier. Don't add new uses.
-    uint16_t titleLineHeight()    const { return headerLineHeight(); }
-    uint16_t captionLineHeight()  const { return bodyLineHeight(); }
-    uint16_t metaLineHeight()     const { return bodyLineHeight(); }
-    uint16_t menuItemLineHeight() const { return bodyLineHeight(); }
-
-    // Legacy aliases.
-    uint16_t smallLineHeight() const {
-        return static_cast<uint16_t>(lineHeight() * smallScale);
-    }
-
-    uint16_t menuLineHeight() const {
-        return static_cast<uint16_t>(lineHeight() * menuScale);
-    }
-
-    uint16_t hintLineHeight() const {
-        return static_cast<uint16_t>(lineHeight() * hintScale);
     }
 
     // ========================================================================
