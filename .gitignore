@@ -57,3 +57,13 @@ CMakeLists.txt
 
 # Claude Code local settings (per-user, should not be tracked)
 .claude/
+
+# Upstream Meshtastic project metadata not relevant to this personal fork
+# (CI workflows fail without secrets, templates/funding/copilot are upstream-specific)
+.github/workflows/
+.github/actions/
+.github/actionlint.yaml
+.github/ISSUE_TEMPLATE/
+.github/pull_request_template.md
+.github/FUNDING.yml
+.github/copilot-instructions.md
