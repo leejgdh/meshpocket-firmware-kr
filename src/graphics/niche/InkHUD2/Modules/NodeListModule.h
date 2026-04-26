@@ -36,6 +36,7 @@ struct NodeEntry {
     uint8_t hopsAway = HOPS_UNKNOWN;            // Number of hops
     uint8_t batteryLevel = 255; // 0-100, 255 = unknown
     bool isFavorite = false;
+    bool viaMqtt = false;       // Heard via MQTT bridge, not direct LoRa
 };
 
 // Node list module - replaces Heard, Recents
@@ -67,6 +68,7 @@ private:
     void renderSignalBars(RenderContext& ctx, const Layout* layout, int16_t x, int16_t y, int16_t snr, uint16_t height);
     void hatchRegion(RenderContext& ctx, int16_t x, int16_t y, uint16_t w, uint16_t h, uint8_t spacing, Color color);
     std::string formatDistance(int32_t meters) const;
+    std::string formatLastHeard(uint32_t epoch) const;
     std::string truncateWithEllipsis(const RenderContext& ctx, const std::string& text, uint16_t maxWidth, float scale = 1.0f) const;
 
     // Font scale - use Layout::smallScale

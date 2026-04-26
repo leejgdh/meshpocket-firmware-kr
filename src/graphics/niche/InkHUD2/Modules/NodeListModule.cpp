@@ -8,11 +8,57 @@
 #include "../UI/StatusBar.h"
 #include "../UI/ContentArea.h"
 #include "../UI/HeaderText.h"
+#include "gps/RTC.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 
 namespace InkHUD2 {
+
+// Wi-Fi/RSS-style icon for MQTT-bridged nodes: three concentric quarter
+// arcs (top-right quadrant) blooming out of an origin dot at bottom-left.
+// Line A's text runs at full lineHeight, so the icon can be sized to match.
+// 2px stroke (arc at r and r+1) at radii 3,7,11 — 4px radial spacing leaves
+// a clean 2px gap between bands.
+namespace {
+constexpr int16_t WIFI_RADII[3] = {3, 7, 11};
+constexpr int16_t WIFI_W = 13;  // max radius + stroke + origin
+constexpr int16_t WIFI_H = 13;
+
+void drawArcQuadrant(RenderContext& ctx, int16_t cx, int16_t cy, int16_t r, Color c) {
+    // Bresenham midpoint, top-right quadrant only: from (r, 0) up to (0, r).
+    // setPixelClipped is private on RenderContext, so we draw 1x1 fillRects.
+    int16_t x = r;
+    int16_t y = 0;
+    int16_t err = 0;
+    while (x >= y) {
+        ctx.fillRect(cx + x, cy - y, 1, 1, c);
+        ctx.fillRect(cx + y, cy - x, 1, 1, c);
+        if (err <= 0) {
+            y++;
+            err += 2 * y + 1;
+        }
+        if (err > 0) {
+            x--;
+            err -= 2 * x + 1;
+        }
+    }
+}
+
+void drawWifiIcon(RenderContext& ctx, int16_t left, int16_t top, Color c) {
+    int16_t cx = left;                  // origin at bottom-left of bounding box
+    int16_t cy = top + WIFI_H - 1;
+    for (int i = 0; i < 3; ++i) {
+        // 2px stroke: arc at r and r+1, leaving a 2px gap before the next band.
+        drawArcQuadrant(ctx, cx, cy, WIFI_RADII[i], c);
+        drawArcQuadrant(ctx, cx, cy, WIFI_RADII[i] + 1, c);
+    }
+    // Origin "source" dot — 2x2 block to anchor the bloom visually.
+    ctx.fillRect(cx, cy - 1, 2, 2, c);
+}
+}  // namespace
+
 
 NodeListModule::NodeListModule() {
     nodes.reserve(64);
@@ -304,43 +350,61 @@ void NodeListModule::renderNodeRow(RenderContext& ctx, const NodeEntry& node, in
         ctx.text(nodeTextInset, lineAY, shortName, Align::LEFT, textColor);
     }
 
-    // Right side of Line A: [hops] + signal bars
-    bool hasHops = (node.hopsAway != NodeEntry::HOPS_UNKNOWN && node.hopsAway > 0);
+    // Right side of Line A: [time] [signal bars OR "MQ"]
+    // Hops moved out — they were cluttering the row and overlapping nearby
+    // columns; users care most about "when last seen" + "how strong".
+    bool hasTime = (node.lastHeard != 0);
 
-    // Calculate signal bars position (3 bars now)
+    // Line A's right slot draws bars / Wi-Fi icon as raw pixels (not font
+    // glyphs), so the small nodeTextInset is enough — no extra margin.
+    uint16_t rightMargin = nodeTextInset;
+
     uint16_t barW = layout->signalBarWidth();
     uint16_t barSpacing = layout->signalBarSpacing();
-    uint16_t barsWidth = 3 * barW + 2 * barSpacing;  // 3 bars
-    int16_t signalX = ctx.width() - nodeTextInset - barsWidth;
+    uint16_t barsWidth = 3 * barW + 2 * barSpacing;
 
-    // Draw hops before signal bars if present
-    if (hasHops) {
-        char hopsStr[8];
-        snprintf(hopsStr, sizeof(hopsStr), "%dH", node.hopsAway);
-        int16_t hopsX = signalX - elemSpacing;
-        if (isElongated) {
-            ctx.textScaled(hopsX, lineAY, hopsStr, shortNameScale, Align::RIGHT, textColor);
-        } else {
-            ctx.text(hopsX, lineAY, hopsStr, Align::RIGHT, textColor);
-        }
+    int16_t rightSlotX = ctx.width() - rightMargin;     // right edge of rightmost element
+    int16_t rightSlotLeftX = rightSlotX - barsWidth;    // left edge of rightmost element
+
+    if (node.viaMqtt) {
+        // Wi-Fi-style icon, vertically centered against the signal-bar slot.
+        int16_t iconLeft = rightSlotX - WIFI_W;
+        int16_t iconTop = lineAY + (int16_t)((shortLineH > WIFI_H) ? (shortLineH - WIFI_H) / 2 : 0);
+        drawWifiIcon(ctx, iconLeft, iconTop, textColor);
+        rightSlotLeftX = iconLeft;
+    } else if (node.snr != 0) {
+        renderSignalBars(ctx, layout, rightSlotLeftX, lineAY, node.snr, shortLineH);
     }
 
-    // Signal bars (if SNR available)
-    if (node.snr != 0) {
-        renderSignalBars(ctx, layout, signalX, lineAY, node.snr, shortLineH);
+    // Last-heard time, sitting to the left of the rightmost slot with a
+    // generous gap so it doesn't crowd into the bars/MQ tag.
+    if (hasTime) {
+        std::string ts = formatLastHeard(node.lastHeard);
+        if (!ts.empty()) {
+            int16_t timeRightX = rightSlotLeftX - elemSpacing * 2;
+            if (isElongated) {
+                ctx.textScaled(timeRightX, lineAY, ts.c_str(), shortNameScale, Align::RIGHT, textColor);
+            } else {
+                ctx.text(timeRightX, lineAY, ts.c_str(), Align::RIGHT, textColor);
+            }
+        }
     }
 
     // === Line B: Long name + distance (smaller font) ===
     bool hasDistance = (node.distanceMeters != NodeEntry::DISTANCE_UNKNOWN);
 
+    // Same right-edge margin as Line A so the trailing 'm'/'km' glyph isn't
+    // clipped by the display border.
+    uint16_t rightEdgeMargin = nodeTextInset + elemSpacing;
+
     // Divider X - where right-side info starts (only distance now)
     uint16_t dividerX;
     if (hasDistance) {
-        dividerX = ctx.width() - ctx.textWidthScaled("999km", longNameScale) - nodeTextInset;
-        ctx.textScaled(ctx.width() - nodeTextInset, lineBY, formatDistance(node.distanceMeters).c_str(),
+        dividerX = ctx.width() - ctx.textWidthScaled("999km", longNameScale) - rightEdgeMargin;
+        ctx.textScaled(ctx.width() - rightEdgeMargin, lineBY, formatDistance(node.distanceMeters).c_str(),
                        longNameScale, Align::RIGHT, textColor);
     } else {
-        dividerX = ctx.width() - nodeTextInset;
+        dividerX = ctx.width() - rightEdgeMargin;
     }
 
     // Long name on left (truncated with ellipsis if needed)
@@ -396,6 +460,31 @@ std::string NodeListModule::formatDistance(int32_t meters) const {
         int km = meters / 1000;
         return std::to_string(km) + "km";
     }
+}
+
+// Hybrid absolute-time format. Within the last 24h we render HH:MM in the
+// device tz; older than that we drop to MM/DD so the user can still tell
+// "today vs yesterday vs last week" from a 5-character slot. main.cpp
+// installs the device's tzdef via setenv("TZ", ...) + tzset() at boot, so
+// localtime() honours it. Returns empty string if RTC is unsynced.
+std::string NodeListModule::formatLastHeard(uint32_t epoch) const {
+    if (epoch == 0) return std::string();
+    time_t t = (time_t)epoch;
+    struct tm* lt = localtime(&t);
+    if (!lt) return std::string();
+
+    // Compare against current wall clock from RTC (same epoch source as
+    // node->last_heard, which Events.cpp's syncNodes copies from NodeDB).
+    uint32_t nowSec = getTime(false);
+    long ageSec = (nowSec > epoch) ? (long)(nowSec - epoch) : 0;
+
+    char buf[8];
+    if (ageSec < 24 * 3600) {
+        snprintf(buf, sizeof(buf), "%02d:%02d", lt->tm_hour, lt->tm_min);
+    } else {
+        snprintf(buf, sizeof(buf), "%02d/%02d", lt->tm_mon + 1, lt->tm_mday);
+    }
+    return std::string(buf);
 }
 
 std::string NodeListModule::truncateWithEllipsis(const RenderContext& ctx, const std::string& text, uint16_t maxWidth, float scale) const {

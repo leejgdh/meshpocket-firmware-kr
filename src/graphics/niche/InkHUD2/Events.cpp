@@ -116,6 +116,7 @@ void Events::syncNodes() {
         entry.nodeNum = node->num;
         entry.lastHeard = node->last_heard;
         entry.snr = node->snr;
+        entry.viaMqtt = node->via_mqtt;
         // entry.isFavorite already = false by default
 
         // Hops away
