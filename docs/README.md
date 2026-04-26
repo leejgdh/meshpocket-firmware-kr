@@ -11,6 +11,7 @@
 | [inkhud2-button-ux.md](inkhud2-button-ux.md) | 단일 버튼(짧게/길게/더블탭) UX 룰, 모듈별 입력 매핑, Input enum 명명 |
 | [inkhud2-message-module.md](inkhud2-message-module.md) | Message 모듈의 상태머신(MAIN/MENU/DM_LIST/CANNED_LIST), DM thread 데이터 모델, 채널 vs DM 분기 |
 | [inkhud2-canned-integration.md](inkhud2-canned-integration.md) | inkhud 빌드의 `HAS_SCREEN=0` 함정과 `CannedMessageStore` 활용, 송신 메시지를 화면에 미러하는 `sendToMesh` hook |
+| [inkhud2-layout-guide.md](inkhud2-layout-guide.md) | 디스플레이 사양, header/body/footer 골격, 디자인 토큰 가이드, 매직 넘버 인벤토리, 마이그레이션 계획 |
 
 ## 작성 원칙
 
