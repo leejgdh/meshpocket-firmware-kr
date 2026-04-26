@@ -111,7 +111,7 @@ void NodeListModule::onInput(Input input) {
             }
             break;
 
-        case Input::BACK:
+        case Input::LONG_PRESS:
             // Long press on NodeList opens menu
             if (menuModule) {
                 menuModule->open();

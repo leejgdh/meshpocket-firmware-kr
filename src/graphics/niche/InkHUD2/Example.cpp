@@ -98,7 +98,7 @@ void example_on_button_press() {
     InkHUD2& hud = InkHUD2::instance();
 
     // Dispatch input
-    hud.onInput(Input::SELECT);
+    hud.onInput(Input::SHORT_PRESS);
 }
 
 void example_show_notification(const char* text) {

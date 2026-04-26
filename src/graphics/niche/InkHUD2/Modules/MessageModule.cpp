@@ -146,7 +146,7 @@ void MessageModule::onEvent(const Event& e) {
 }
 
 void MessageModule::onInput(Input input) {
-    if (input == Input::BACK) {
+    if (input == Input::LONG_PRESS) {
         switchToNextTab();
     }
 }

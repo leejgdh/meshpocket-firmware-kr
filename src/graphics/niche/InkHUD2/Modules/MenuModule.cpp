@@ -103,14 +103,14 @@ void MenuModule::onInput(Input input) {
             requestUpdate();
             break;
 
-        case Input::SELECT:
+        case Input::SHORT_PRESS:
             // Short press = next item (wrap around)
             menuList.selectNext();
             selectedIndex = menuList.getSelectedIndex();
             requestUpdate();
             break;
 
-        case Input::BACK: {
+        case Input::LONG_PRESS: {
             // Long press = activate selected item
             // First try MenuList for TOGGLE/VALUE handling
             if (menuList.activateSelected()) {

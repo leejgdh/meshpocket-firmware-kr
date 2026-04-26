@@ -75,7 +75,7 @@ void MapModule::onEvent(const Event& e) {
 void MapModule::onInput(Input input) {
     switch (state) {
         case MapState::MAP:
-            if (input == Input::BACK) {
+            if (input == Input::LONG_PRESS) {
                 // Long press opens settings
                 state = MapState::SETTINGS;
                 handlesInput = true;  // Capture input while in settings
@@ -85,18 +85,18 @@ void MapModule::onInput(Input input) {
 
         case MapState::POSITION:
             // Any input returns to settings
-            if (input == Input::SELECT || input == Input::BACK) {
+            if (input == Input::SHORT_PRESS || input == Input::LONG_PRESS) {
                 state = MapState::SETTINGS;
                 requestUpdate();
             }
             break;
 
         case MapState::SETTINGS:
-            if (input == Input::SELECT) {
+            if (input == Input::SHORT_PRESS) {
                 // Short press = move to next menu item
                 settingsMenu.selectNext();
                 requestUpdate();
-            } else if (input == Input::BACK) {
+            } else if (input == Input::LONG_PRESS) {
                 // Long press = activate selected item
                 MenuItem* item = settingsMenu.getSelectedItem();
                 if (!item) break;

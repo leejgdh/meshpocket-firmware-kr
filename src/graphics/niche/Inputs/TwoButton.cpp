@@ -140,6 +140,18 @@ void TwoButton::setHandlerLongPress(uint8_t whichButton, Callback onLongPress)
     buttons[whichButton].onLongPress = onLongPress;
 }
 
+// Set what should happen when a "double press" event has fired.
+// Registering this handler enables double-press detection on this button,
+// which delays single short-press firing by `windowMs` so a possible 2nd
+// press can be observed first. See header for behavioral notes.
+void TwoButton::setHandlerDoublePress(uint8_t whichButton, Callback onDoublePress, uint32_t windowMs)
+{
+    assert(whichButton < 2);
+    buttons[whichButton].onDoublePress = onDoublePress;
+    buttons[whichButton].doublepressWindow = windowMs;
+    buttons[whichButton].doubleEnabled = true;
+}
+
 // Handle the start of a press to the primary button
 // Wakes our button thread
 void TwoButton::isrPrimary()
@@ -234,10 +246,20 @@ int32_t TwoButton::runOnce()
 
             // If button released since last thread tick,
             if (digitalRead(buttons[i].pin) != buttons[i].activeLogic) {
-                buttons[i].onUp();              // Run callback: press has ended (possible release of a hold)
-                buttons[i].state = State::REST; // Mark that the button has reset
-                if (length > buttons[i].debounceLength && length < buttons[i].longpressLength) // If too short for longpress,
-                    buttons[i].onShortPress();                                                 // Run callback: short press
+                buttons[i].onUp(); // Run callback: press has ended (possible release of a hold)
+
+                bool validShort = (length > buttons[i].debounceLength && length < buttons[i].longpressLength);
+
+                if (validShort && buttons[i].doubleEnabled) {
+                    // Don't fire onShortPress yet — wait to see if a 2nd press arrives
+                    buttons[i].state = State::PENDING_DOUBLE;
+                    buttons[i].releaseAtMillis = millis();
+                    awaitingRelease = true; // keep the thread polling so we can detect the 2nd press
+                } else {
+                    buttons[i].state = State::REST; // Mark that the button has reset
+                    if (validShort)
+                        buttons[i].onShortPress();
+                }
             }
 
             // If button not yet released
@@ -264,6 +286,39 @@ int32_t TwoButton::runOnce()
             // Not yet released, keep polling
             else
                 awaitingRelease = true;
+            break;
+
+        // After a short release, watching for a 2nd press inside the double-press window.
+        // The ISR is still attached but only fires when state == REST, so we poll the pin
+        // ourselves here to catch the 2nd press.
+        case PENDING_DOUBLE: {
+            uint32_t sinceRelease = millis() - buttons[i].releaseAtMillis;
+
+            if (digitalRead(buttons[i].pin) == buttons[i].activeLogic) {
+                // 2nd press observed — this is a double.
+                buttons[i].state = State::SECOND_DOWN;
+                buttons[i].onDown();
+                buttons[i].onDoublePress();
+                awaitingRelease = true;
+            } else if (sinceRelease >= buttons[i].doublepressWindow) {
+                // Window expired with no 2nd press — fire the deferred single short.
+                buttons[i].state = State::REST;
+                buttons[i].onShortPress();
+            } else {
+                awaitingRelease = true; // keep polling until window resolves
+            }
+            break;
+        }
+
+        // 2nd press of a double is currently held. The double event already fired;
+        // we just wait for release without firing another short press.
+        case SECOND_DOWN:
+            if (digitalRead(buttons[i].pin) != buttons[i].activeLogic) {
+                buttons[i].state = State::REST;
+                buttons[i].onUp();
+            } else {
+                awaitingRelease = true;
+            }
             break;
         }
     }

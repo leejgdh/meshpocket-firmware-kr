@@ -334,7 +334,6 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
 
     hud.addModule(nodeListModule);
     hud.addModule(messageModule);
-    hud.addModule(cannedMessageModule);
     hud.addModule(mapModule);
 
     // Configure
@@ -362,10 +361,17 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
         buttons->setWiring(0, config.mainButtonPin);
         buttons->setTiming(0, config.mainButtonDebounce, config.mainButtonLongPress);
         buttons->setHandlerShortPress(0, []() {
-            InkHUD2::instance().onInput(Input::SELECT);
+            InkHUD2::instance().onInput(Input::SHORT_PRESS);
         });
         buttons->setHandlerLongPress(0, []() {
-            InkHUD2::instance().onInput(Input::BACK);
+            InkHUD2::instance().onInput(Input::LONG_PRESS);
+        });
+        // Always-on double-press detection. Side effect: short press is now
+        // delayed by the double-press window (~300 ms by default) on the main
+        // button. Mapping for DOUBLE_TAP is decided later — for now the event
+        // is dispatched into InkHUD2 but no module consumes it.
+        buttons->setHandlerDoublePress(0, []() {
+            InkHUD2::instance().onInput(Input::DOUBLE_TAP);
         });
     }
 

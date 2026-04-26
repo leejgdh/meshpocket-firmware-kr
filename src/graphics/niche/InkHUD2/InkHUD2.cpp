@@ -173,7 +173,7 @@ void InkHUD2::onInput(Input input) {
 
     // If not handled by system module, handle SELECT at HUD level
     // Note: BACK is already dispatched to slot module by dispatchInputAndCheck
-    if (!handled && input == Input::SELECT) {
+    if (!handled && input == Input::SHORT_PRESS) {
         cycleSlot(0);
     }
 }

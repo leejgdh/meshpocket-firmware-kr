@@ -15,9 +15,15 @@ enum class Input : uint8_t {
     RIGHT,
 
     // Buttons
-    SELECT,       // Center / OK / Enter (single click)
+    // Naming reflects the physical gesture, not a semantic role — a module
+    // assigns its own meaning. Modules MUST NOT assume SHORT_PRESS == "OK"
+    // or LONG_PRESS == "cancel". On single-button devices (MeshPocket),
+    // these are the only inputs that ever fire from the slot module's POV
+    // (and SHORT_PRESS is consumed by InkHUD2 to cycle layouts unless the
+    //  module sets handlesInput = true).
+    SHORT_PRESS,  // Single short click
     DOUBLE_TAP,   // Double click
-    BACK,         // Back / Cancel (long press)
+    LONG_PRESS,   // Held past the long-press threshold
     AUX,          // Auxiliary button (device-specific)
 
     // Touch (future)

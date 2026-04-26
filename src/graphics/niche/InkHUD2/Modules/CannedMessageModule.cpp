@@ -82,7 +82,7 @@ void CannedMessageModule::onInput(Input input) {
             }
             break;
 
-        case Input::BACK:
+        case Input::LONG_PRESS:
             // Long-press main button = send. Mirrors MapModule pattern
             // where BACK activates the highlighted item.
             sendSelected();
