@@ -46,9 +46,6 @@ public:
         return layout ? layout->tabSize() : 8;
     }
 
-    // Scale factor for text
-    static constexpr float TEXT_SCALE = 0.78f;
-
 private:
     void drawDottedLine(int16_t y);
 

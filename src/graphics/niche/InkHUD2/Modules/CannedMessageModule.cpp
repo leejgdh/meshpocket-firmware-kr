@@ -155,7 +155,7 @@ void CannedMessageModule::onRender(RenderContext& ctx) {
     Rect batRect = layout->batteryRect();
     uint16_t iconW = layout->lineHeight();
     uint16_t maxTitleW = batRect.x - layout->margin() - padding - iconW - padding * 2;
-    const char* title = header.getText(&textRenderer, maxTitleW, StatusBar::TITLE_SCALE);
+    const char* title = header.getText(&textRenderer, maxTitleW, Layout::headerScale);
 
     StatusBar statusBar(buffer, layout, &textRenderer);
     int16_t contentTop = statusBar.render(layout->margin() + padding, title, StatusBar::Icon::ENVELOPE);
@@ -177,13 +177,8 @@ void CannedMessageModule::renderList(RenderContext& ctx, const ContentArea& cont
         return;
     }
 
-    // Use small font on tight screens — same heuristic as NodeListModule.
-    uint16_t maxDim = std::max(ctx.width(), ctx.height());
-    uint16_t minDim = std::min(ctx.width(), ctx.height());
-    bool isElongated = (minDim > 0) && (maxDim * 10 / minDim > 15);
-
-    float scale = isElongated ? Layout::smallScale : 1.0f;
-    uint16_t lineH = isElongated ? layout->smallLineHeight() : layout->lineHeight();
+    float scale = Layout::bodyScale;
+    uint16_t lineH = layout->bodyLineHeight();
     uint16_t spacing = layout->elementSpacing();
     uint16_t rowH = lineH + spacing;
 
@@ -215,17 +210,15 @@ void CannedMessageModule::renderList(RenderContext& ctx, const ContentArea& cont
         }
 
         TextUtils::truncate(ctx, messages[i].c_str(), maxTextW, scale, truncBuf, sizeof(truncBuf));
-        ctx.textScaled(margin + textInset, y, truncBuf, scale, Align::LEFT,
-                       selected ? Color::WHITE : Color::BLACK);
+        ctx.text(margin + textInset, y, truncBuf, Align::LEFT, selected ? Color::WHITE : Color::BLACK, scale);
 
         y += rowH;
     }
 
     // Hint at bottom: "Hold MAIN to send"
-    if (content.h - (y - content.top()) >= layout->smallLineHeight()) {
+    if (content.h - (y - content.top()) >= layout->bodyLineHeight()) {
         const char* hint = "Hold MAIN to send";
-        ctx.textScaled(content.x + content.w / 2, content.bottom() - layout->smallLineHeight(),
-                       hint, Layout::smallScale, Align::CENTER, Color::BLACK);
+        ctx.text(content.x + content.w / 2, content.bottom() - layout->bodyLineHeight(), hint, Align::CENTER, Color::BLACK, Layout::bodyScale);
     }
 }
 

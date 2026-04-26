@@ -41,10 +41,6 @@ private:
     Buffer* buffer;
     const Layout* layout;
     TextRenderer* textRenderer;
-
-public:
-    // Scale for title text (public for HeaderText calculations)
-    static constexpr float TITLE_SCALE = 0.78f;
 };
 
 } // namespace InkHUD2

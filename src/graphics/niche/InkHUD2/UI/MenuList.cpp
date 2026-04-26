@@ -78,7 +78,7 @@ const MenuItem* MenuList::getSelectedItem() const {
 
 uint16_t MenuList::itemHeight(const Layout* layout) {
     if (!layout) return 18;
-    return layout->menuLineHeight() + layout->menuItemPadding();
+    return layout->bodyLineHeight() + layout->menuItemPadding();
 }
 
 void MenuList::render(RenderContext& ctx, int16_t startY, int16_t endY, uint16_t margin) {
@@ -122,7 +122,7 @@ void MenuList::renderItem(RenderContext& ctx, const Layout* layout, const MenuIt
     }
 
     Color textColor = Color::BLACK;
-    float scale = layout->effectiveMenuScale();
+    float scale = Layout::bodyScale;
 
     // Right-side value/indicator
     int16_t rightX = ctx.width() - margin - textInset;
@@ -131,22 +131,22 @@ void MenuList::renderItem(RenderContext& ctx, const Layout* layout, const MenuIt
     uint16_t rightW = 0;
     switch (item.type) {
         case MenuItemType::TOGGLE:
-            rightW = ctx.textWidthScaled("OFF", scale) + elemSpacing;
+            rightW = ctx.textWidth("OFF", scale) + elemSpacing;
             break;
         case MenuItemType::VALUE:
             if (item.value.options && item.value.currentIndex) {
                 uint8_t idx = *item.value.currentIndex;
                 if (idx < item.value.optionCount) {
-                    rightW = ctx.textWidthScaled(item.value.options[idx], scale) + elemSpacing;
+                    rightW = ctx.textWidth(item.value.options[idx], scale) + elemSpacing;
                 }
             }
             break;
         case MenuItemType::SUBMENU:
-            rightW = ctx.textWidthScaled(">", scale) + elemSpacing;
+            rightW = ctx.textWidth(">", scale) + elemSpacing;
             break;
         case MenuItemType::LABEL:
             if (item.labelValue) {
-                rightW = ctx.textWidthScaled(item.labelValue, scale) + elemSpacing;
+                rightW = ctx.textWidth(item.labelValue, scale) + elemSpacing;
             }
             break;
         default:
@@ -160,12 +160,12 @@ void MenuList::renderItem(RenderContext& ctx, const Layout* layout, const MenuIt
     // Render label with truncation if needed
     char truncBuf[64];
     TextUtils::truncate(ctx, item.label, maxLabelW, scale, truncBuf, sizeof(truncBuf));
-    ctx.textScaled(labelX, y, truncBuf, scale, Align::LEFT, textColor);
+    ctx.text(labelX, y, truncBuf, Align::LEFT, textColor, scale);
 
     switch (item.type) {
         case MenuItemType::TOGGLE:
             if (item.toggleValue) {
-                ctx.textScaled(rightX, y, *item.toggleValue ? "ON" : "OFF", scale, Align::RIGHT, textColor);
+                ctx.text(rightX, y, *item.toggleValue ? "ON" : "OFF", Align::RIGHT, textColor, scale);
             }
             break;
 
@@ -173,18 +173,18 @@ void MenuList::renderItem(RenderContext& ctx, const Layout* layout, const MenuIt
             if (item.value.options && item.value.currentIndex) {
                 uint8_t idx = *item.value.currentIndex;
                 if (idx < item.value.optionCount) {
-                    ctx.textScaled(rightX, y, item.value.options[idx], scale, Align::RIGHT, textColor);
+                    ctx.text(rightX, y, item.value.options[idx], Align::RIGHT, textColor, scale);
                 }
             }
             break;
 
         case MenuItemType::SUBMENU:
-            ctx.textScaled(rightX, y, ">", scale, Align::RIGHT, textColor);
+            ctx.text(rightX, y, ">", Align::RIGHT, textColor, scale);
             break;
 
         case MenuItemType::LABEL:
             if (item.labelValue) {
-                ctx.textScaled(rightX, y, item.labelValue, scale, Align::RIGHT, textColor);
+                ctx.text(rightX, y, item.labelValue, Align::RIGHT, textColor, scale);
             }
             break;
 

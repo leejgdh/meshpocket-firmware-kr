@@ -100,7 +100,7 @@ void NodeListModule::onRender(RenderContext& ctx) {
     Rect batRect = layout->batteryRect();
     uint16_t iconW = layout->lineHeight();
     uint16_t maxTitleW = batRect.x - layout->margin() - padding - iconW - padding * 2;
-    const char* title = header.getText(&textRenderer, maxTitleW, StatusBar::TITLE_SCALE);
+    const char* title = header.getText(&textRenderer, maxTitleW, Layout::headerScale);
 
     StatusBar statusBar(buffer, layout, &textRenderer);
     int16_t contentTop = statusBar.render(layout->margin() + padding, title, StatusBar::Icon::USERS);
@@ -278,18 +278,12 @@ void NodeListModule::renderNodeList(RenderContext& ctx, const ContentArea& conte
     const Layout* layout = ctx.getLayout();
     if (!layout) return;
 
-    uint16_t lineH = layout->lineHeight();
-
-    // Detect elongated screen (aspect ratio > 1.5)
-    uint16_t maxDim = std::max(ctx.width(), ctx.height());
-    uint16_t minDim = std::min(ctx.width(), ctx.height());
-    bool isElongated = (minDim > 0) && (maxDim * 10 / minDim > 15);
-
-    // Card height depends on screen type
-    uint16_t shortLineH = isElongated ? layout->smallLineHeight() : lineH;
-    uint16_t longLineH = isElongated ? static_cast<uint16_t>(lineH * 0.67f) : layout->smallLineHeight();
-    uint16_t cardH = shortLineH + longLineH;
-    uint16_t cardMargin = layout->nodeCardMargin();
+    // Card = two body-tier lines. Both lines share the same scale so the
+    // pair reads as a single block. Section-spacing gap between cards keeps
+    // adjacent nodes from visually merging.
+    uint16_t rowLineH = layout->bodyLineHeight();
+    uint16_t cardH = rowLineH * 2;
+    uint16_t cardMargin = layout->sectionSpacing();
 
     int16_t y = content.top();
     auto sorted = sortedNodes();
@@ -314,19 +308,12 @@ void NodeListModule::renderNodeRow(RenderContext& ctx, const NodeEntry& node, in
     const Layout* layout = ctx.getLayout();
     if (!layout) return;
 
-    uint16_t lineH = layout->lineHeight();
-
-    // Use smaller fonts for elongated screens (aspect ratio > 1.5) to fit more content
-    uint16_t maxDim = std::max(ctx.width(), ctx.height());
-    uint16_t minDim = std::min(ctx.width(), ctx.height());
-    bool isElongated = (minDim > 0) && (maxDim * 10 / minDim > 15);
-
-    // For elongated: shortName uses smallScale, longName uses even smaller
-    // For square: shortName full size, longName uses smallScale
-    float shortNameScale = isElongated ? Layout::smallScale : 1.0f;
-    float longNameScale = isElongated ? 0.67f : Layout::smallScale;  // ~12px equivalent
-    uint16_t shortLineH = isElongated ? layout->smallLineHeight() : lineH;
-    uint16_t longLineH = static_cast<uint16_t>(lineH * longNameScale);
+    // Two-tier system: rows use body. Both lines share the scale.
+    float rowScale = Layout::bodyScale;
+    float shortNameScale = rowScale;
+    float longNameScale  = rowScale;
+    uint16_t shortLineH = layout->bodyLineHeight();
+    uint16_t longLineH  = shortLineH;
 
     Color textColor = Color::BLACK;
 
@@ -344,11 +331,9 @@ void NodeListModule::renderNodeRow(RenderContext& ctx, const NodeEntry& node, in
 
     // === Line A: Short name + [hops] + signal bars ===
     const char* shortName = (node.shortName[0] != '\0') ? node.shortName : "?";
-    if (isElongated) {
-        ctx.textScaled(nodeTextInset, lineAY, shortName, shortNameScale, Align::LEFT, textColor);
-    } else {
-        ctx.text(nodeTextInset, lineAY, shortName, Align::LEFT, textColor);
-    }
+    // Always draw scaled (no isElongated branch) so line A matches line B's
+    // tier exactly. ctx.text() defaults to body scale and would break parity.
+    ctx.text(nodeTextInset, lineAY, shortName, Align::LEFT, textColor, shortNameScale);
 
     // Right side of Line A: [time] [signal bars OR "MQ"]
     // Hops moved out — they were cluttering the row and overlapping nearby
@@ -382,11 +367,7 @@ void NodeListModule::renderNodeRow(RenderContext& ctx, const NodeEntry& node, in
         std::string ts = formatLastHeard(node.lastHeard);
         if (!ts.empty()) {
             int16_t timeRightX = rightSlotLeftX - elemSpacing * 2;
-            if (isElongated) {
-                ctx.textScaled(timeRightX, lineAY, ts.c_str(), shortNameScale, Align::RIGHT, textColor);
-            } else {
-                ctx.text(timeRightX, lineAY, ts.c_str(), Align::RIGHT, textColor);
-            }
+            ctx.text(timeRightX, lineAY, ts.c_str(), Align::RIGHT, textColor, shortNameScale);
         }
     }
 
@@ -400,9 +381,8 @@ void NodeListModule::renderNodeRow(RenderContext& ctx, const NodeEntry& node, in
     // Divider X - where right-side info starts (only distance now)
     uint16_t dividerX;
     if (hasDistance) {
-        dividerX = ctx.width() - ctx.textWidthScaled("999km", longNameScale) - rightEdgeMargin;
-        ctx.textScaled(ctx.width() - rightEdgeMargin, lineBY, formatDistance(node.distanceMeters).c_str(),
-                       longNameScale, Align::RIGHT, textColor);
+        dividerX = ctx.width() - ctx.textWidth("999km", longNameScale) - rightEdgeMargin;
+        ctx.text(ctx.width() - rightEdgeMargin, lineBY, formatDistance(node.distanceMeters).c_str(), Align::RIGHT, textColor, longNameScale);
     } else {
         dividerX = ctx.width() - rightEdgeMargin;
     }
@@ -411,7 +391,7 @@ void NodeListModule::renderNodeRow(RenderContext& ctx, const NodeEntry& node, in
     std::string longName = (node.longName[0] != '\0') ? node.longName : shortName;
     std::string truncatedName = truncateWithEllipsis(ctx, longName, dividerX - nodeTextInset - elemSpacing, longNameScale);
 
-    ctx.textScaled(nodeTextInset, lineBY, truncatedName.c_str(), longNameScale, Align::LEFT, textColor);
+    ctx.text(nodeTextInset, lineBY, truncatedName.c_str(), Align::LEFT, textColor, longNameScale);
 
     // Hatch fade effect for long names (only if truncated)
     if (longName.length() > truncatedName.length() - 3) {  // -3 for "..."
@@ -488,15 +468,15 @@ std::string NodeListModule::formatLastHeard(uint32_t epoch) const {
 }
 
 std::string NodeListModule::truncateWithEllipsis(const RenderContext& ctx, const std::string& text, uint16_t maxWidth, float scale) const {
-    if (ctx.textWidthScaled(text.c_str(), scale) <= maxWidth) {
+    if (ctx.textWidth(text.c_str(), scale) <= maxWidth) {
         return text;
     }
 
     std::string result = text;
     const char* ellipsis = "...";
-    uint16_t ellipsisWidth = ctx.textWidthScaled(ellipsis, scale);
+    uint16_t ellipsisWidth = ctx.textWidth(ellipsis, scale);
 
-    while (!result.empty() && ctx.textWidthScaled(result.c_str(), scale) + ellipsisWidth > maxWidth) {
+    while (!result.empty() && ctx.textWidth(result.c_str(), scale) + ellipsisWidth > maxWidth) {
         // Handle UTF-8: check if last byte is continuation byte
         size_t len = result.length();
         while (len > 0 && (result[len - 1] & 0xC0) == 0x80) {

@@ -28,12 +28,25 @@ public:
     static constexpr uint16_t MIN_DIMENSION = 100;  // Below this, don't scale down further
 
     // ========================================================================
-    // Font Scales (relative to base font size)
+    // Font Scales — design system, two tiers only.
+    //
+    // Modules MUST use one of these two constants. No magic literals
+    // (0.67f / 0.78f / etc.), no module-local aliases. See
+    // docs/inkhud2-layout-guide.md.
     // ========================================================================
-    static constexpr float smallScale = 0.78f;   // ~14px on 200x200
-    static constexpr float menuScale = 0.89f;    // ~16px on 200x200
-    static constexpr float hintScale = 0.78f;    // ~14px on 200x200
-    static constexpr float verticalScale = 0.89f; // ~16px - smaller font for vertical mode
+    // Two-tier system. Every textual element MUST use one of these two
+    // and only these two. No legacy aliases — call sites that want a
+    // different meaning must add a new tier here, not invent local names.
+    //
+    //   bodyScale   — all primary content (NodeList rows, ChatView
+    //                 messages, BootModule pairing strings, MenuModule
+    //                 items, footer hints, map labels). The "regular"
+    //                 tier.
+    //   headerScale — ONLY for top-of-screen headers (StatusBar title).
+    //                 Slightly larger than body so the header reads as a
+    //                 distinct band. Don't reuse for inline emphasis.
+    static constexpr float bodyScale   = 0.67f;
+    static constexpr float headerScale = 0.78f;
 
     // ========================================================================
     // Base values (for REFERENCE_SIZE, scaled dynamically)
@@ -98,16 +111,6 @@ public:
     bool isVertical() const { return screenH > screenW * 1.5f; }  // Tall narrow screen
     bool isNarrow() const { return screenW < 150; }  // Very narrow (e.g., 128px)
 
-    // Effective scale for text - smaller in vertical mode
-    float effectiveScale(float baseScale) const {
-        return isVertical() ? baseScale * verticalScale : baseScale;
-    }
-
-    // Effective menu scale (for vertical mode)
-    float effectiveMenuScale() const { return effectiveScale(menuScale); }
-    float effectiveSmallScale() const { return effectiveScale(smallScale); }
-    float effectiveHintScale() const { return effectiveScale(hintScale); }
-
     // ========================================================================
     // Font metrics (from font, with scaling for fallback)
     // ========================================================================
@@ -117,16 +120,12 @@ public:
         return scaled(18, 12);  // Fallback: 18px ref, min 12px
     }
 
-    uint16_t smallLineHeight() const {
-        return static_cast<uint16_t>(lineHeight() * smallScale);
+    // Two-tier line heights matching the two scales.
+    uint16_t bodyLineHeight()   const {
+        return static_cast<uint16_t>(lineHeight() * bodyScale);
     }
-
-    uint16_t menuLineHeight() const {
-        return static_cast<uint16_t>(lineHeight() * menuScale);
-    }
-
-    uint16_t hintLineHeight() const {
-        return static_cast<uint16_t>(lineHeight() * hintScale);
+    uint16_t headerLineHeight() const {
+        return static_cast<uint16_t>(lineHeight() * headerScale);
     }
 
     // ========================================================================

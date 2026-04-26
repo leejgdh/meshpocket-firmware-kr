@@ -94,8 +94,8 @@
 │  │ │  MessageModule  │ │  NodeListModule │ │    MapModule    │           │   │
 │  │ │  ─────────────  │ │  ─────────────  │ │  ─────────────  │           │   │
 │  │ │  - ChatView     │ │  - All nodes    │ │  - Map view     │           │   │
-│  │ │  - DMView       │ │  - Favorites    │ │  - Settings     │           │   │
-│  │ │  - Tab bar      │ │  - Recent       │ │  - MenuList     │           │   │
+│  │ │  - QuickMenu    │ │  - Favorites    │ │  - Settings     │           │   │
+│  │ │  - CannedList   │ │  - Recent       │ │  - MenuList     │           │   │
 │  │ │  - Footer       │ │  - StatusBar    │ │  - StatusBar    │           │   │
 │  │ │  - StatusBar    │ │  - ContentArea  │ │  - ContentArea  │           │   │
 │  │ │  - ContentArea  │ │                 │ │                 │           │   │
@@ -332,8 +332,7 @@ InkHUD2/
 │   └── BootModule          # Boot/pairing screens
 │
 ├── Views/
-│   ├── ChatView.h/cpp      # Channel messages
-│   └── DMView.h/cpp        # Direct messages
+│   └── ChatView.h/cpp      # Channel messages and DM threads (unified)
 │
 ├── Fonts/
 │   └── UnifiedFont18px.h   # 2526 glyphs (CJK+ASCII+Cyrillic)

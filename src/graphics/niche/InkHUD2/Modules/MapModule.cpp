@@ -281,7 +281,7 @@ void MapModule::renderMap(RenderContext& ctx) {
     Rect batRect = layout->batteryRect();
     uint16_t iconW = layout->lineHeight();
     uint16_t maxTitleW = batRect.x - layout->margin() - padding - iconW - padding * 2;
-    const char* title = header.getText(&textRenderer, maxTitleW, StatusBar::TITLE_SCALE);
+    const char* title = header.getText(&textRenderer, maxTitleW, Layout::headerScale);
 
     // === Render StatusBar ===
     StatusBar statusBar(buffer, layout, &textRenderer);
@@ -320,7 +320,7 @@ void MapModule::renderMap(RenderContext& ctx) {
 
         int16_t gap = layout->verticalTextGap() * 3 / 2;  // Larger gap for readability
         ctx.text(mapCenterX, mapCenterY - gap, statusLine1, Align::CENTER, Color::BLACK);
-        ctx.textScaled(mapCenterX, mapCenterY + gap, statusLine2, layout->effectiveSmallScale(), Align::CENTER, Color::BLACK);
+        ctx.text(mapCenterX, mapCenterY + gap, statusLine2, Align::CENTER, Color::BLACK, Layout::bodyScale);
         drawScaleBar(ctx, footerTop);
         return;
     }
@@ -331,11 +331,11 @@ void MapModule::renderMap(RenderContext& ctx) {
         if (showAllNodes) {
             ctx.text(mapCenterX, mapCenterY - gap, "No nodes", Align::CENTER, Color::BLACK);
             const char* line2 = layout->isVertical() ? "with GPS" : "with GPS position";
-            ctx.textScaled(mapCenterX, mapCenterY + gap, line2, layout->effectiveSmallScale(), Align::CENTER, Color::BLACK);
+            ctx.text(mapCenterX, mapCenterY + gap, line2, Align::CENTER, Color::BLACK, Layout::bodyScale);
         } else {
             ctx.text(mapCenterX, mapCenterY - gap, "No favorites", Align::CENTER, Color::BLACK);
             const char* line2 = layout->isVertical() ? "Add in app" : "Add in Meshtastic app";
-            ctx.textScaled(mapCenterX, mapCenterY + gap, line2, layout->effectiveSmallScale(), Align::CENTER, Color::BLACK);
+            ctx.text(mapCenterX, mapCenterY + gap, line2, Align::CENTER, Color::BLACK, Layout::bodyScale);
         }
         drawScaleBar(ctx, footerTop);
         return;
@@ -384,7 +384,7 @@ void MapModule::renderSettings(RenderContext& ctx) {
     Rect batRect = layout->batteryRect();
     uint16_t iconW = layout->lineHeight();
     uint16_t maxTitleW = batRect.x - margin - iconW - layout->padding() * 2;
-    const char* settingsTitle = headerText.getText(&textRenderer, maxTitleW, StatusBar::TITLE_SCALE);
+    const char* settingsTitle = headerText.getText(&textRenderer, maxTitleW, Layout::headerScale);
 
     StatusBar header(buffer, layout, &textRenderer);
     int16_t contentTop = header.render(margin, settingsTitle, StatusBar::Icon::GEAR, false);
@@ -436,13 +436,13 @@ void MapModule::drawCluster(RenderContext& ctx, const MapCluster& cluster,
     // Draw count number in white (inverted)
     char countStr[8];
     snprintf(countStr, sizeof(countStr), "%d", (int)cluster.nodes.size());
-    ctx.textScaled(x, y - 5, countStr, Layout::smallScale, Align::CENTER, Color::WHITE);
+    ctx.text(x, y - 5, countStr, Align::CENTER, Color::WHITE, Layout::bodyScale);
 
     // Draw label below with first node's short name + count
     char label[16];
     const char* firstName = cluster.nodes[0]->shortName[0] ? cluster.nodes[0]->shortName : "?";
     snprintf(label, sizeof(label), "%s+%d", firstName, (int)(cluster.nodes.size() - 1));
-    ctx.textScaled(x, y + radius + layout->elementSpacing(), label, Layout::smallScale, Align::CENTER, Color::BLACK);
+    ctx.text(x, y + radius + layout->elementSpacing(), label, Align::CENTER, Color::BLACK, Layout::bodyScale);
 }
 
 void MapModule::drawSingleNode(RenderContext& ctx, const MapNode& node, int16_t x, int16_t y,
@@ -462,7 +462,7 @@ void MapModule::drawSingleNode(RenderContext& ctx, const MapNode& node, int16_t 
 
     // Get label dimensions
     const char* name = (node.shortName[0] != '\0') ? node.shortName : "?";
-    uint16_t labelW = ctx.textWidthScaled(name, Layout::smallScale);
+    uint16_t labelW = ctx.textWidth(name, Layout::bodyScale);
     uint16_t labelH = layout->verticalTextGap();  // Approximate scaled text height
 
     // Clamp node position within content area, accounting for label
@@ -480,7 +480,7 @@ void MapModule::drawSingleNode(RenderContext& ctx, const MapNode& node, int16_t 
     ctx.fillCircle(x, y, radius, Color::BLACK);
 
     // Draw label centered below node
-    ctx.textScaled(x, y + radius + layout->elementSpacing(), name, Layout::smallScale, Align::CENTER, Color::BLACK);
+    ctx.text(x, y + radius + layout->elementSpacing(), name, Align::CENTER, Color::BLACK, Layout::bodyScale);
 }
 
 void MapModule::drawOwnNode(Buffer* buffer, const Layout* layout, int16_t x, int16_t y) {
@@ -522,7 +522,7 @@ void MapModule::drawScaleBar(RenderContext& ctx, int16_t footerY) {
 
     // If no scale yet, show placeholder
     if (metersToPx <= 0) {
-        ctx.textScaled(barX, footerY + layout->slotSpacing() + layout->elementSpacing(), "---", Layout::smallScale, Align::LEFT, Color::BLACK);
+        ctx.text(barX, footerY + layout->slotSpacing() + layout->elementSpacing(), "---", Align::LEFT, Color::BLACK, Layout::bodyScale);
         return;
     }
 
@@ -551,7 +551,7 @@ void MapModule::drawScaleBar(RenderContext& ctx, int16_t footerY) {
 
     // Label
     std::string label = formatDistance(static_cast<int32_t>(nice));
-    ctx.textScaled(barX + barW + layout->textInset(), footerY + layout->slotSpacing() + layout->elementSpacing(), label.c_str(), Layout::smallScale, Align::LEFT, Color::BLACK);
+    ctx.text(barX + barW + layout->textInset(), footerY + layout->slotSpacing() + layout->elementSpacing(), label.c_str(), Align::LEFT, Color::BLACK, Layout::bodyScale);
 }
 
 std::string MapModule::formatDistance(int32_t meters) const {

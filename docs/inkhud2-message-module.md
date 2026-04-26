@@ -273,9 +273,9 @@ JOHN - 5m - 2H 5dB
 
 ## 알려진 한계
 
-- ChatView는 항상 threaded — 단건 표시(DMView 같은 단순 모드)는 더 이상 사용 안 함
+- ChatView는 항상 threaded — 채널과 DM 모두 같은 view 가 처리 (이전에 있던 DMView 는 흡수되어 삭제됨)
 - DM peer 목록에 "마지막 메시지 미리보기" 없음 (이름만 표시 + 안 읽음 `*` prefix)
 - 메시지 단건 선택/답장/삭제 UI 없음
 - 채널 메시지 송신은 canned 경로로만 가능 — 자유 텍스트 입력 UI 없음 (모바일 앱에서)
-- 시간 표시는 `millis()` 기준 상대시간 (`5m`, `2h`) — 절대시간 표시 없음
+- 시간 표시는 디바이스 tz 기준 절대시간 (`HH:MM`) — RTC unsync 시 빈칸
 - SNR 정수로 반올림 — 소수점 표시 없음 (e-ink 가독성 + 좁은 화면 우선)

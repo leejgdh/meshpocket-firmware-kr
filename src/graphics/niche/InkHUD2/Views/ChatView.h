@@ -61,9 +61,6 @@ private:
     GetNodeNameFn getNodeName;
     FormatTimeFn formatTimeFn;
     uint32_t myNodeNum;
-
-    // Info line scale
-    static constexpr float INFO_SCALE = 0.78f;
 };
 
 } // namespace InkHUD2

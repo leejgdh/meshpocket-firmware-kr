@@ -69,9 +69,7 @@ private:
     void hatchRegion(RenderContext& ctx, int16_t x, int16_t y, uint16_t w, uint16_t h, uint8_t spacing, Color color);
     std::string formatDistance(int32_t meters) const;
     std::string formatLastHeard(uint32_t epoch) const;
-    std::string truncateWithEllipsis(const RenderContext& ctx, const std::string& text, uint16_t maxWidth, float scale = 1.0f) const;
-
-    // Font scale - use Layout::smallScale
+    std::string truncateWithEllipsis(const RenderContext& ctx, const std::string& text, uint16_t maxWidth, float scale = Layout::bodyScale) const;
 
     std::vector<NodeEntry> sortedNodes() const;
 
