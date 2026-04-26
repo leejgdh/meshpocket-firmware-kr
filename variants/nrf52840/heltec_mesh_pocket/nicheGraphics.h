@@ -31,7 +31,7 @@ void setupNicheGraphics()
     config.mainButtonDebounce = 75;
     config.mainButtonLongPress = 500;
     config.hasAuxButton = false;
-    config.defaultRotation = 3;
+    config.defaultRotation = 2;
 
     InkHUD2::setup(driver, config);
 
