@@ -19,10 +19,18 @@ class MenuModule;
 static constexpr uint8_t CHANNEL_DM = 255;
 
 // Single message inside a configured channel's history.
+//
+// `snr` and `hopsAway` are populated from the originating packet when the
+// message is incoming. For outgoing (mirrored) messages they're sentinels
+// (snr = 0.0f, hopsAway = HOPS_UNKNOWN) and are not rendered.
 struct ChannelMessage {
+    static constexpr uint8_t HOPS_UNKNOWN = 255;
+
     uint32_t from;          // Node number of the sender
     uint32_t timestamp;     // Unix epoch
     uint8_t channel;        // Channel index
+    float snr;              // packet->rx_snr (0.0 = unknown / outgoing)
+    uint8_t hopsAway;       // packet->hop_start - packet->hop_limit (255 = unknown)
     char text[237];         // UTF-8 text
 };
 
@@ -30,8 +38,12 @@ struct ChannelMessage {
 //   from == myNodeNum  → outgoing (sent by us)
 //   from != myNodeNum  → incoming (received from the peer)
 struct DMMessage {
+    static constexpr uint8_t HOPS_UNKNOWN = 255;
+
     uint32_t from;
     uint32_t timestamp;
+    float snr;              // 0.0 = unknown / outgoing
+    uint8_t hopsAway;       // 255 = unknown
     char text[237];
 };
 
@@ -78,9 +90,14 @@ public:
     void onInput(Input input) override;
 
     // Add an inbound message OR mirror an outbound one. `to` distinguishes
-    // direction for DMs (from == myNodeNum means outbound).
+    // direction for DMs (from == myNodeNum means outbound). `snr` and
+    // `hopsAway` are extracted from the packet when called from
+    // Events.cpp's text-message observer; outbound mirrors pass the
+    // unknown sentinels (0.0f / 255) since those signals don't apply to
+    // our own sends.
     void setMessage(uint32_t from, uint32_t to, const char* text,
-                    uint8_t channel, uint32_t timestamp = 0);
+                    uint8_t channel, uint32_t timestamp = 0,
+                    float snr = 0.0f, uint8_t hopsAway = 255);
 
     // Mark a configured channel as read.
     void markChannelAsRead(uint8_t channel);
@@ -155,6 +172,7 @@ private:
 
     // Quick-menu actions
     void shareCurrentPosition();
+    void requestCurrentPosition();   // DM-only: send ours + ask peer to reply
 
     // Find or create a DM thread for the given peer. Returns nullptr if
     // peerNodeNum is 0 (invalid). Pointer is stable between additions.

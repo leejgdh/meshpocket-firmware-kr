@@ -9,11 +9,22 @@
 
 namespace InkHUD2 {
 
-// Message data for rendering
+// Message data for rendering. `snr` and `hopsAway` are populated for
+// inbound messages and rendered inline next to the timestamp; both are
+// silenced for outgoing messages (sentinels: snr == 0.0f, hopsAway == 255).
+//
+// Note: kept as a plain aggregate (no default member initializers) so
+// brace-init `{a, b, c, d, e}` works under C++14, which the platformio
+// gcc-9.3.1 toolchain compiles with by default. Callers pass all five
+// fields explicitly.
 struct ChatMessage {
+    static constexpr uint8_t HOPS_UNKNOWN = 255;
+
     uint32_t from;
     uint32_t timestamp;
     const char* text;
+    float snr;
+    uint8_t hopsAway;
 };
 
 // Callback type for getting node names

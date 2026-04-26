@@ -177,12 +177,12 @@ void MessageModule::renderMain(RenderContext& ctx) {
     if (channelMsgs) {
         view.reserve(channelMsgs->size());
         for (const auto& m : *channelMsgs) {
-            view.push_back({m.from, m.timestamp, m.text});
+            view.push_back({m.from, m.timestamp, m.text, m.snr, m.hopsAway});
         }
     } else if (dmMsgs) {
         view.reserve(dmMsgs->size());
         for (const auto& m : *dmMsgs) {
-            view.push_back({m.from, m.timestamp, m.text});
+            view.push_back({m.from, m.timestamp, m.text, m.snr, m.hopsAway});
         }
     }
     (void)isChatStyle; // ChatView always renders threaded; chatStyle preserved for future
@@ -413,16 +413,34 @@ void MessageModule::rebuildTopMenuItems() {
         topMenuItems.push_back(item);
     }
 
-    // 2) DM (always present, opens DM list — even when empty)
-    topMenuLabels.emplace_back("DM");
+    // 2) DM (always present, opens DM list — even when empty). Aggregate
+    //    unread state across all DM threads so a single "*" prefix here
+    //    tells the user "some peer has new DM".
+    bool anyDMUnread = false;
+    for (const auto& th : dmThreads) {
+        if (th.hasUnread) { anyDMUnread = true; break; }
+    }
+    {
+        std::string label;
+        label.reserve(8);
+        label += anyDMUnread ? "* " : "  ";
+        label += "DM";
+        topMenuLabels.emplace_back(std::move(label));
+    }
     topMenuActions.emplace_back([this]() { this->enterDMList(); });
     // We add the MenuItem entry below (after all label/action pushes) so
     // pointers into the vectors are stable.
 
-    // 3) Configured channels
+    // 3) Configured channels — "*" prefix for channels with unread,
+    //    leading two-space padding otherwise so the column lines up.
     for (size_t i = 0; i < channels.size(); ++i) {
         const char* name = channels[i].name;
-        topMenuLabels.emplace_back((name && *name) ? name : "Channel");
+        const char* base = (name && *name) ? name : "Channel";
+        std::string label;
+        label.reserve(8 + strlen(base));
+        label += channels[i].hasUnread ? "* " : "  ";
+        label += base;
+        topMenuLabels.emplace_back(std::move(label));
         size_t idx = i;
         topMenuActions.emplace_back([this, idx]() {
             this->switchToChannel(idx);
@@ -599,7 +617,7 @@ void MessageModule::rebuildQuickMenuItems() {
         (currentView == ViewKind::DM_THREAD && currentDMNodeNum != 0);
 
     // Reserve generously to keep the storage stable while we wire pointers.
-    size_t maxItems = 1 /*Back*/ + 2 /*Send Canned + Share Position*/;
+    size_t maxItems = 1 /*Back*/ + 3 /*Send Canned + Share + Request Position*/;
     quickMenuLabels.reserve(maxItems);
     quickMenuActions.reserve(maxItems);
     quickMenuItems.reserve(maxItems);
@@ -626,6 +644,18 @@ void MessageModule::rebuildQuickMenuItems() {
         this->shareCurrentPosition();
         this->exitQuickMenu();
     });
+
+    // Request Position — only on a DM thread with a real peer. Asking a
+    // broadcast channel for "where are you?" is too noisy.
+    bool isDMThreadWithPeer =
+        (currentView == ViewKind::DM_THREAD && currentDMNodeNum != 0);
+    if (isDMThreadWithPeer) {
+        quickMenuLabels.emplace_back("Request Position");
+        quickMenuActions.emplace_back([this]() {
+            this->requestCurrentPosition();
+            this->exitQuickMenu();
+        });
+    }
 
     // Build MenuItems pointing into stable storage above.
     for (size_t i = 0; i < quickMenuActions.size(); ++i) {
@@ -694,6 +724,24 @@ void MessageModule::shareCurrentPosition() {
 
     if (menuModule) {
         menuModule->showAlert("Position sent.");
+    }
+}
+
+void MessageModule::requestCurrentPosition() {
+    if (!positionModule) return;
+    // Only meaningful on a DM thread — asking a specific peer "where are
+    // you?". The Quick-menu item is only added under that condition, but
+    // double-check here to be safe in case of an out-of-order call.
+    if (currentView != ViewKind::DM_THREAD || currentDMNodeNum == 0) return;
+
+    // PositionModule's `wantReplies=true` sends our position AND flags the
+    // packet as expecting the peer to respond with theirs. The peer's reply
+    // updates NodeDB, which our InkHUD2 picks up via the existing
+    // node-status observer.
+    positionModule->sendOurPosition(currentDMNodeNum, /*wantReplies=*/true, 0);
+
+    if (menuModule) {
+        menuModule->showAlert("Position requested.");
     }
 }
 
@@ -907,7 +955,8 @@ DMThread* MessageModule::findOrCreateDMThread(uint32_t peerNodeNum) {
 // ======================================================================
 
 void MessageModule::setMessage(uint32_t from, uint32_t to, const char* text,
-                               uint8_t channel, uint32_t timestamp) {
+                               uint8_t channel, uint32_t timestamp,
+                               float snr, uint8_t hopsAway) {
     if (!text) return;
     uint32_t ts = timestamp ? timestamp : (millis() / 1000);
 
@@ -920,6 +969,8 @@ void MessageModule::setMessage(uint32_t from, uint32_t to, const char* text,
         DMMessage m;
         m.from = from;
         m.timestamp = ts;
+        m.snr = snr;
+        m.hopsAway = hopsAway;
         strncpy(m.text, text, sizeof(m.text) - 1);
         m.text[sizeof(m.text) - 1] = '\0';
         th->messages.push_front(m);
@@ -960,6 +1011,8 @@ void MessageModule::setMessage(uint32_t from, uint32_t to, const char* text,
     cm.from = from;
     cm.timestamp = ts;
     cm.channel = channel;
+    cm.snr = snr;
+    cm.hopsAway = hopsAway;
     strncpy(cm.text, text, sizeof(cm.text) - 1);
     cm.text[sizeof(cm.text) - 1] = '\0';
     channelMessages[tabIndex].push_front(cm);

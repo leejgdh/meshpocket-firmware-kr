@@ -213,9 +213,25 @@ int Events::onReceiveTextMessage(const meshtastic_MeshPacket* packet) {
     //   broadcast on channel: to == NODENUM_BROADCAST → channel
     uint8_t channel = (packet->to != NODENUM_BROADCAST) ? CHANNEL_DM : packet->channel;
 
+    // Per-message link metrics. Outbound mirror packets don't have a
+    // meaningful rx_snr (we generated them) and their hop fields aren't
+    // counted, so we treat from==myNodeNum as "no metrics".
+    bool isOutbound = (packet->from == nodeDB->getNodeNum());
+    float snr = isOutbound ? 0.0f : packet->rx_snr;
+
+    // hop_start - hop_limit is the count of hops the packet actually took.
+    // hop_start is set when first transmitted; hop_limit decrements on each
+    // forward. If hop_start is 0 the device didn't populate it (older
+    // firmware on the sender side), in which case we report unknown.
+    uint8_t hopsAway = 255;
+    if (!isOutbound && packet->hop_start > 0 && packet->hop_start >= packet->hop_limit) {
+        hopsAway = static_cast<uint8_t>(packet->hop_start - packet->hop_limit);
+    }
+
     // Update message module — `to` lets the module key DM threads by peer
     // regardless of message direction.
-    messageModule->setMessage(packet->from, packet->to, msgText, channel, timestamp);
+    messageModule->setMessage(packet->from, packet->to, msgText, channel,
+                              timestamp, snr, hopsAway);
 
     return 0;  // Continue notifying other observers
 }

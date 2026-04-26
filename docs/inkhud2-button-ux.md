@@ -82,10 +82,11 @@ TwoButton 콜백
 - DM_LIST 상태(peer 목록):
   - SHORT_PRESS — 다음 peer (wrap)
   - LONG_PRESS — peer 선택해서 그 thread MAIN으로 진입
-- QUICK_MENU 상태(액션 허브: Back / Send Canned* / Share Position):
+- QUICK_MENU 상태(액션 허브: Back / Send Canned* / Share Position / Request Position**):
   - SHORT_PRESS — 다음 항목 (wrap)
-  - LONG_PRESS — 활성화. Send Canned는 CANNED_LIST로, Share Position은 즉시 송신 후 MAIN으로
+  - LONG_PRESS — 활성화. Send Canned는 CANNED_LIST로, Share/Request Position 은 즉시 송신 후 MAIN으로
   - *Send Canned는 현재 view에 송신 대상이 있을 때만 표시
+  - **Request Position 은 DM_THREAD 이고 peer 있을 때만 표시
 - CANNED_LIST 상태(canned 메시지 송신):
   - SHORT_PRESS — 다음 메시지 (wrap)
   - LONG_PRESS — 송신 (현재 채널/peer가 자동 destination), 송신 후 MAIN

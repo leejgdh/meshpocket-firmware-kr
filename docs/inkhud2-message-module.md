@@ -82,8 +82,8 @@ uint32_t currentDMNodeNum;      // DM_THREAD일 때 의미; 0 = 빈 placeholder
 | 상태 | handlesInput | 진입 경로 | 화면 |
 |---|---|---|---|
 | MAIN | false | 기본 / 모든 sub-state 의 종착지 | StatusBar(채널 또는 "DM: short_name") + ChatView |
-| MENU | true | MAIN의 DOUBLE_TAP | StatusBar("Channels") + Back / DM / 채널 |
-| DM_LIST | true | MENU의 "DM" 활성화 | StatusBar("DM List") + Back / peer 목록 |
+| MENU | true | MAIN의 DOUBLE_TAP | StatusBar("Channels") + Back / DM / 채널 (안 읽음 채널·DM 어그리게이트는 `* ` prefix) |
+| DM_LIST | true | MENU의 "DM" 활성화 | StatusBar("DM List") + Back / peer 목록 (안 읽음 peer 는 `* ` prefix) |
 | QUICK_MENU | true | MAIN의 SHORT_PRESS | StatusBar("Quick") + Back / Send Canned / Share Position |
 | CANNED_LIST | true | QUICK_MENU의 "Send Canned" 활성화 | StatusBar("Send -> #채널" 또는 "Send -> @peer") + 메시지 |
 
@@ -210,13 +210,19 @@ MAIN 화면에서 SHORT_PRESS를 누르면 QUICK_MENU로 진입한다. 컨텍스
 | `< Back` | 항상 | MAIN 으로 돌아감 |
 | `Send Canned` | 현재 view 에 송신 대상이 있을 때만 (CHANNEL 또는 DM_THREAD with peer) | CANNED_LIST 진입 |
 | `Share Position` | 항상 | 현재 위치를 송신 + "Position sent." alert + MAIN 복귀 |
+| `Request Position` | DM_THREAD 이고 peer 가 있을 때만 | peer 에게 위치 응답 요청(`wantReplies=true`) + "Position requested." alert + MAIN 복귀 |
 
 **Share Position의 destination 결정**:
 - DM_THREAD (peer 있음) → `positionModule->sendOurPosition(peer, false, 0)` — peer로 직접 송신, PKI 자동
 - CHANNEL view → `sendOurPosition(NODENUM_BROADCAST, false, channelIndex)` — 그 채널에 broadcast
 - 그 외 (No DM Yet 등) → `sendOurPosition()` — 기본 broadcast (primary 채널)
 
-Position 패킷은 `POSITION_APP` portnum이라 우리의 outgoing TEXT_MESSAGE_APP hook이 잡지 않는다. 즉 Message 화면에 자기 위치 메시지로 미러되지는 않음 — 의도된 동작 (위치는 채팅 항목이 아님). 송신 확인은 menuModule alert "Position sent." 로 사용자에게 즉각 피드백.
+**Request Position** (`requestCurrentPosition`):
+- DM_THREAD 한정. `wantReplies=true` 로 보내는 점만 Share Position 과 다름 — 우리 위치도 같이 가지만 peer 에게 답신 요청 플래그가 붙음
+- peer 가 응답하면 NodeDB 가 자동 업데이트되고, 우리 InkHUD2 의 node-status observer 가 그걸 받아서 NodeListModule/MapModule 의 위치 정보를 갱신함. 별도 UI 표시 안 함 (텍스트 메시지가 아니라 NodeDB level 갱신이라).
+- 즉 Message 화면에 답신이 메시지로 안 뜸 — 노드 화면에서 "최근 위치 받음" 정도로 반영됨
+
+Position 패킷은 `POSITION_APP` portnum이라 우리의 outgoing TEXT_MESSAGE_APP hook이 잡지 않는다. 즉 Message 화면에 자기 위치 메시지로 미러되지는 않음 — 의도된 동작 (위치는 채팅 항목이 아님). 송신 확인은 menuModule alert ("Position sent." / "Position requested.") 로 사용자에게 즉각 피드백.
 
 **확장 패턴**: QUICK_MENU의 `rebuildQuickMenuItems()`에 새 항목 추가는 단순 — 라벨/람다 한 쌍만 push_back. 미래 후보:
 - "Ping" — 이미 시스템 메뉴에 있으나 Quick에 두면 더 자주 호출 가능
@@ -238,6 +244,31 @@ Position 패킷은 `POSITION_APP` portnum이라 우리의 outgoing TEXT_MESSAGE_
 
 자세한 수신/송신 데이터 흐름은 [inkhud2-canned-integration.md](inkhud2-canned-integration.md) 참조.
 
+## ChatView — per-message 링크 메트릭
+
+받은 메시지마다 sender/timestamp 옆에 작은 글씨로 hop count + SNR 이 표시된다.
+
+```
+JOHN - 5m - 2H 5dB
+[메시지 본문...]
+```
+
+- `2H` — 이 메시지가 2 hops 거쳐서 도착 (mesh 중계 노드 1개 통과). `0H` 면 직접 수신
+- `5dB` — 마지막 hop 의 SNR (정수 dB 로 반올림 표시). 양수일수록 신호 좋음, -10 dB 이하면 빈약
+
+데이터 출처:
+- `hopsAway = packet->hop_start - packet->hop_limit` — 송신자가 hop_start 를 0 으로 두면 unknown 으로 간주
+- `snr = packet->rx_snr` (float) — 0.0 이면 unknown
+
+송신 메시지(`from == myNodeNum`)에는 표시 안 함 — 우리가 보낸 거라 hop/SNR 의미 없음.
+
+데이터 흐름:
+1. `Events.cpp::onReceiveTextMessage` 가 packet 에서 추출 (`hop_start - hop_limit`, `rx_snr`)
+2. `setMessage(..., snr, hopsAway)` 으로 전달
+3. `ChannelMessage` / `DMMessage` 에 저장
+4. `renderMain` 이 `ChatMessage` 로 변환하면서 그대로 전달
+5. `ChatView::render` 의 incoming 분기에서 info 라인 끝에 ` - 2H 5dB` 형식으로 append
+
 ## 알려진 한계
 
 - ChatView는 항상 threaded — 단건 표시(DMView 같은 단순 모드)는 더 이상 사용 안 함
@@ -245,3 +276,4 @@ Position 패킷은 `POSITION_APP` portnum이라 우리의 outgoing TEXT_MESSAGE_
 - 메시지 단건 선택/답장/삭제 UI 없음
 - 채널 메시지 송신은 canned 경로로만 가능 — 자유 텍스트 입력 UI 없음 (모바일 앱에서)
 - 시간 표시는 `millis()` 기준 상대시간 (`5m`, `2h`) — 절대시간 표시 없음
+- SNR 정수로 반올림 — 소수점 표시 없음 (e-ink 가독성 + 좁은 화면 우선)

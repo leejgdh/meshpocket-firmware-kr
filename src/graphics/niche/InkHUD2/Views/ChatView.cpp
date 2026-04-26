@@ -71,16 +71,42 @@ void ChatView::render(const ContentArea& area, const std::vector<ChatMessage>& m
         const ChatMessage& msg = messages[i];
         bool outgoing = (msg.from == 0) || (msg.from == myNodeNum);
 
-        // Compose info string
-        char info[48];
+        // Compose info string. For inbound messages we also append hop count
+        // and SNR (signal quality) from the original packet so the user can
+        // glance at relay path and link health per-message. Outbound (own)
+        // messages get just sender + time — there's no meaningful link
+        // metric for our own sends.
+        char info[64];
         const char* senderName = getSenderName(msg.from, outgoing);
         const char* timeStr = getTimeString(msg.timestamp);
 
+        char metaBuf[24];
+        metaBuf[0] = '\0';
+        if (!outgoing) {
+            char hopsPart[8] = "";
+            char snrPart[12] = "";
+            if (msg.hopsAway != ChatMessage::HOPS_UNKNOWN) {
+                snprintf(hopsPart, sizeof(hopsPart), "%uH", (unsigned)msg.hopsAway);
+            }
+            if (msg.snr != 0.0f) {
+                // Round to nearest dB — fractional precision rarely matters
+                // here and uses up width.
+                int snrInt = (int)(msg.snr >= 0 ? msg.snr + 0.5f : msg.snr - 0.5f);
+                snprintf(snrPart, sizeof(snrPart), "%ddB", snrInt);
+            }
+            if (hopsPart[0] && snrPart[0]) {
+                snprintf(metaBuf, sizeof(metaBuf), " - %s %s", hopsPart, snrPart);
+            } else if (hopsPart[0]) {
+                snprintf(metaBuf, sizeof(metaBuf), " - %s", hopsPart);
+            } else if (snrPart[0]) {
+                snprintf(metaBuf, sizeof(metaBuf), " - %s", snrPart);
+            }
+        }
+
         if (timeStr && timeStr[0] != '\0') {
-            snprintf(info, sizeof(info), "%s - %s", senderName, timeStr);
+            snprintf(info, sizeof(info), "%s - %s%s", senderName, timeStr, metaBuf);
         } else {
-            strncpy(info, senderName, sizeof(info) - 1);
-            info[sizeof(info) - 1] = '\0';
+            snprintf(info, sizeof(info), "%s%s", senderName, metaBuf);
         }
 
         // Calculate message height (scaled for elongated screens)
