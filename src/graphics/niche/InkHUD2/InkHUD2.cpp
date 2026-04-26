@@ -168,12 +168,18 @@ void InkHUD2::onEvent(const Event& e) {
 void InkHUD2::onInput(Input input) {
     if (!initialized) return;
 
-    // Check if any system module handles input
+    // Dispatch to system / slot modules. dispatchInputAndCheck returns true
+    // only when a module with handlesInput=true consumed the input (e.g. an
+    // open menu, or MapModule in its SETTINGS state) — in that case we do
+    // nothing here.
     bool handled = pipeInstance.dispatchInputAndCheck(input);
 
-    // If not handled by system module, handle SELECT at HUD level
-    // Note: BACK is already dispatched to slot module by dispatchInputAndCheck
-    if (!handled && input == Input::SHORT_PRESS) {
+    // Project-wide UX rule: long press on a module's main screen cycles to
+    // the next layout. Modules whose main screens want a different long-press
+    // behavior must opt out by setting handlesInput=true (returning to
+    // capture mode). Short press is reserved for module-internal navigation
+    // and is no longer auto-cycled at the HUD level.
+    if (!handled && input == Input::LONG_PRESS) {
         cycleSlot(0);
     }
 }

@@ -15,6 +15,7 @@
 #include "graphics/niche/Drivers/Backlight/LatchingBacklight.h"
 #include "graphics/niche/Inputs/TwoButton.h"
 #include "graphics/niche/Fonts/CJK/UnifiedFont18px.h"
+#include "graphics/niche/Utils/CannedMessageStore.h"
 
 #include "modules/PositionModule.h"
 #include "mesh/Channels.h"
@@ -318,14 +319,23 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
     nodeListModule->setMenuModule(menuModule);
     mapModule->setMenuModule(menuModule);
     cannedMessageModule->setMenuModule(menuModule);
+    messageModule->setMenuModule(menuModule);   // for Quick menu's "Position sent" alert
 
-    // Configure message channels
-    messageModule->addDMChannel();
+    // Configure message channels. DM threads are tracked separately and
+    // appear dynamically as messages arrive — no upfront DM "channel"
+    // registration is needed.
     for (uint8_t i = 0; i < configuredCount; i++) {
         uint8_t chIdx = configuredChannels[i];
         messageModule->addChannel(chIdx, alertsChannelNames[i], true);
     }
     messageModule->setMyNodeNum(nodeDB->getNodeNum());
+
+    // Wake up the niche-graphics canned-message store. This handles flash
+    // load + parse and registers an AdminModule observer so the phone/CLI
+    // can read & write canned messages even though the upstream
+    // CannedMessageModule is excluded from this build (it's bound to
+    // Screen.cpp, suppressed by inkhud's MESHTASTIC_EXCLUDE_SCREEN flag).
+    NicheGraphics::CannedMessageStore::getInstance();
 
     // Register modules
     hud.addSystemModule(batteryModule);
@@ -334,7 +344,11 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
 
     hud.addModule(nodeListModule);
     hud.addModule(messageModule);
-    hud.addModule(mapModule);
+    // mapModule intentionally not added to the layout cycle — UX deemed
+    // not useful enough on MeshPocket and the Map's own state machine
+    // (MAP/SETTINGS/POSITION) clashes with the global short/long-press
+    // model. Instance is still created so Events.cpp can keep node-position
+    // bookkeeping in sync if we re-enable it later.
 
     // Configure
     hud.setSlotCount(1);

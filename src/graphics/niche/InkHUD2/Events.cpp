@@ -189,8 +189,9 @@ void Events::syncNodes() {
 int Events::onReceiveTextMessage(const meshtastic_MeshPacket* packet) {
     if (!messageModule || !packet) return 0;
 
-    // Don't show our own outgoing messages
-    if (packet->from == nodeDB->getNodeNum()) return 0;
+    // We accept both incoming and outgoing messages here. Outgoing packets
+    // arrive via TextMessageModule::notifyOutgoing() (called by
+    // MeshService::handleToRadio with `from` rewritten to our nodeNum).
 
     // Extract message text
     const char* text = reinterpret_cast<const char*>(packet->decoded.payload.bytes);
@@ -205,18 +206,16 @@ int Events::onReceiveTextMessage(const meshtastic_MeshPacket* packet) {
     // Get timestamp (UTC epoch; consumers apply TZ as needed)
     uint32_t timestamp = getValidTime(RTCQuality::RTCQualityDevice, false);
 
-    // Determine channel: DM if sent directly to us, otherwise use packet's channel
-    uint8_t channel;
-    if (packet->to == nodeDB->getNodeNum()) {
-        // Direct message to us
-        channel = CHANNEL_DM;
-    } else {
-        // Broadcast on a channel
-        channel = packet->channel;
-    }
+    // DM if the destination is anything other than the broadcast address.
+    // Works for both directions:
+    //   inbound  DM:  to == myNodeNum     → DM
+    //   outbound DM:  to == peerNodeNum   → DM
+    //   broadcast on channel: to == NODENUM_BROADCAST → channel
+    uint8_t channel = (packet->to != NODENUM_BROADCAST) ? CHANNEL_DM : packet->channel;
 
-    // Update message module
-    messageModule->setMessage(packet->from, msgText, channel, timestamp);
+    // Update message module — `to` lets the module key DM threads by peer
+    // regardless of message direction.
+    messageModule->setMessage(packet->from, packet->to, msgText, channel, timestamp);
 
     return 0;  // Continue notifying other observers
 }

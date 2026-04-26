@@ -111,8 +111,12 @@ void NodeListModule::onInput(Input input) {
             }
             break;
 
-        case Input::LONG_PRESS:
-            // Long press on NodeList opens menu
+        // LONG_PRESS is handled at the HUD level (cycles to next layout) —
+        // we just don't claim it, so it falls through with handlesInput=false.
+
+        case Input::DOUBLE_TAP:
+            // Double tap on a module's main screen opens that module's menu.
+            // For NodeList the "module menu" is the global system menu.
             if (menuModule) {
                 menuModule->open();
             }

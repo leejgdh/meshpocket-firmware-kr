@@ -1,32 +1,74 @@
 #pragma once
 
 #include "Module.h"
+#include "../UI/MenuItem.h"
+#include "../UI/MenuList.h"
 #include <cstdint>
-#include <vector>
 #include <deque>
+#include <functional>
+#include <string>
+#include <vector>
 
 namespace InkHUD2 {
 
-// Special channel index for DM
+// Forward declaration so we don't pull MenuModule.h into this header.
+class MenuModule;
+
+// Special channel index for DM. Used as a sentinel by Events.cpp to flag
+// that a message is a direct message rather than a broadcast on a channel.
 static constexpr uint8_t CHANNEL_DM = 255;
 
-// Message entry with channel info
+// Single message inside a configured channel's history.
 struct ChannelMessage {
-    uint32_t from;          // Node number
-    uint32_t timestamp;     // Unix timestamp
-    uint8_t channel;        // Channel index or CHANNEL_DM
-    char text[237];         // Message text (UTF-8)
+    uint32_t from;          // Node number of the sender
+    uint32_t timestamp;     // Unix epoch
+    uint8_t channel;        // Channel index
+    char text[237];         // UTF-8 text
 };
 
-// Tab info for display
+// Single DM message. Direction is encoded by `from`:
+//   from == myNodeNum  → outgoing (sent by us)
+//   from != myNodeNum  → incoming (received from the peer)
+struct DMMessage {
+    uint32_t from;
+    uint32_t timestamp;
+    char text[237];
+};
+
+// One DM thread = our conversation history with a single peer.
+struct DMThread {
+    uint32_t nodeNum;                  // Peer's nodeNum (the thread key)
+    bool hasUnread;
+    std::deque<DMMessage> messages;    // newest at front
+};
+
+// Per-channel state. No longer rendered as a tab strip — this is just the
+// per-channel storage container. DMs live in a separate `dmThreads` vector
+// because they are per-peer, not per-channel.
 struct ChannelTab {
-    uint8_t channelIndex;   // Channel index or CHANNEL_DM
-    bool hasUnread;         // Has unread messages
-    bool chatStyle;         // true = threaded chat, false = single message
-    char name[16];          // Short name for display
+    uint8_t channelIndex;
+    bool hasUnread;
+    bool chatStyle;
+    char name[16];
 };
 
-// Message module with channel tabs - chat-style display
+// What the MAIN screen is currently showing.
+enum class ViewKind : uint8_t {
+    CHANNEL,    // a configured channel's chat
+    DM_THREAD,  // a specific peer's DM thread
+};
+
+// Message module with channel selection via an internal menu, and a separate
+// DM list submenu. Two screen states drive what's drawn:
+//
+//   MAIN     — content of the current view (channel or DM thread).
+//              SHORT_PRESS reserved for a future "send canned message" flow.
+//              LONG_PRESS falls through to HUD-level cycle.
+//              DOUBLE_TAP enters MENU.
+//   MENU     — top-level: Back / DM / configured channels.
+//              SHORT_PRESS = next item, LONG_PRESS = activate.
+//   DM_LIST  — sub-menu of DM peers: Back / peer A / peer B / ...
+//              Same input semantics as MENU.
 class MessageModule : public Module {
 public:
     MessageModule();
@@ -35,54 +77,142 @@ public:
     void onEvent(const Event& e) override;
     void onInput(Input input) override;
 
-    // Add message to a channel (newest at front)
-    void setMessage(uint32_t from, const char* text, uint8_t channel, uint32_t timestamp = 0);
+    // Add an inbound message OR mirror an outbound one. `to` distinguishes
+    // direction for DMs (from == myNodeNum means outbound).
+    void setMessage(uint32_t from, uint32_t to, const char* text,
+                    uint8_t channel, uint32_t timestamp = 0);
 
-    // Mark channel as read
-    void markAsRead(uint8_t channel);
+    // Mark a configured channel as read.
+    void markChannelAsRead(uint8_t channel);
 
-    // Clear all messages
+    // Clear all messages (channel + DM).
     void clear();
 
-    // Configure which channels to track (call at setup)
-    // useChatStyle=true for threaded view, false for single message
+    // Configure which channels to track (call at setup).
     void addChannel(uint8_t channelIndex, const char* name, bool useChatStyle = true);
-    void addDMChannel();  // Add DM tab (single message, no chat style)
 
-    // Get current tab channel
+    // Get the channel index of the currently displayed view, or CHANNEL_DM
+    // if showing a DM thread.
     uint8_t getCurrentChannel() const;
 
-    // Set own node number for outgoing detection
+    // Set own node number for outgoing detection.
     void setMyNodeNum(uint32_t nodeNum) { myNodeNum = nodeNum; }
 
-    // For external integration - get node name callbacks
+    // Optional MenuModule reference — used to flash transient alerts
+    // ("Position sent.", etc.) from quick-menu actions.
+    void setMenuModule(MenuModule* m) { menuModule = m; }
+
+    // Node-name resolvers (provided by Events.cpp via NodeDB).
     using NodeNameCallback = const char* (*)(uint32_t nodeNum);
     void setShortNameCallback(NodeNameCallback cb) { getShortName = cb; }
     void setLongNameCallback(NodeNameCallback cb) { getLongName = cb; }
 
 private:
-    void switchToNextTab();
-    void switchToTab(size_t index);
+    enum class State { MAIN, MENU, DM_LIST, QUICK_MENU, CANNED_LIST };
+
+    void switchToChannel(size_t channelTabIndex);
+    void switchToDMThread(uint32_t peerNodeNum);
+
     const char* getChannelName(uint8_t channel) const;
     const char* formatTime(uint32_t timestamp) const;
 
-    // Tabs configuration
-    std::vector<ChannelTab> tabs;
-    size_t currentTabIndex = 0;
+    // Render entry points per state
+    void renderMain(RenderContext& ctx);
+    void renderMenu(RenderContext& ctx);
+    void renderDMList(RenderContext& ctx);
+    void renderQuickMenu(RenderContext& ctx);
+    void renderCannedList(RenderContext& ctx);
 
-    // Messages per channel (indexed by tab index) - deque for chat history
+    // Menu lifecycle (top-level menu)
+    void rebuildTopMenuItems();
+    void enterMenu();
+    void exitMenu();
+    void activateSelectedTopMenuItem();
+
+    // DM list lifecycle (sub-menu)
+    void rebuildDMListItems();
+    void enterDMList();
+    void exitDMListToMenu();
+    void activateSelectedDMListItem();
+
+    // Quick menu — reached from MAIN via SHORT_PRESS. Hub for
+    // contextual actions like "Send Canned" and "Share Position".
+    // Items are rebuilt on every entry so they can adapt to the current
+    // view (e.g. "Send Canned" only appears when there's a destination).
+    void rebuildQuickMenuItems();
+    void enterQuickMenu();
+    void exitQuickMenu();           // back to MAIN
+    void activateSelectedQuickMenuItem();
+
+    // Canned list lifecycle — reached from QUICK_MENU's "Send Canned" item.
+    // Destination is implicit from `currentView`. On activate, sends the
+    // chosen text and returns to MAIN. "Back" returns to QUICK_MENU.
+    void rebuildCannedListItems();
+    void enterCannedList();
+    void exitCannedList();          // → MAIN (used after a successful send)
+    void activateSelectedCannedItem();
+    void sendCanned(const std::string& text);
+
+    // Quick-menu actions
+    void shareCurrentPosition();
+
+    // Find or create a DM thread for the given peer. Returns nullptr if
+    // peerNodeNum is 0 (invalid). Pointer is stable between additions.
+    DMThread* findDMThread(uint32_t peerNodeNum);
+    DMThread* findOrCreateDMThread(uint32_t peerNodeNum);
+
+    // === Channels ===
+    std::vector<ChannelTab> channels;
     static constexpr size_t MAX_MESSAGES_PER_CHANNEL = 10;
     std::vector<std::deque<ChannelMessage>> channelMessages;
 
-    // Own node number for outgoing detection
-    uint32_t myNodeNum = 0;
+    // === DM ===
+    std::vector<DMThread> dmThreads;
+    static constexpr size_t MAX_MESSAGES_PER_DM = 20;
 
-    // Callbacks to get node names
+    // === Current MAIN view ===
+    ViewKind currentView = ViewKind::DM_THREAD;
+    size_t currentChannelIndex = 0;   // valid when currentView == CHANNEL
+    uint32_t currentDMNodeNum = 0;    // valid when currentView == DM_THREAD; 0 = empty placeholder
+
+    // === Identity / lookups ===
+    uint32_t myNodeNum = 0;
     NodeNameCallback getShortName = nullptr;
     NodeNameCallback getLongName = nullptr;
-
-    // Default fallback for node name
     static const char* defaultNodeName(uint32_t nodeNum);
+
+    // === Menu state ===
+    State state = State::MAIN;
+    MenuList menuList;
+
+    // Top-level menu (Back / DM / channels)
+    std::vector<MenuItem> topMenuItems;
+    std::vector<std::string> topMenuLabels;
+    std::vector<std::function<void()>> topMenuActions;
+
+    // DM list sub-menu (Back / peer A / peer B / ...)
+    std::vector<MenuItem> dmListItems;
+    std::vector<std::string> dmListLabels;
+    std::vector<std::function<void()>> dmListActions;
+
+    // Quick-menu (Back / Send Canned / Share Position / ...). Items are
+    // rebuilt on every entry so context-dependent items (like Send Canned
+    // only when a destination exists) can be added/dropped dynamically.
+    std::vector<MenuItem> quickMenuItems;
+    std::vector<std::string> quickMenuLabels;
+    std::vector<std::function<void()>> quickMenuActions;
+
+    // Canned-message sub-menu (Back / canned A / canned B / ...). Source of
+    // truth is the global `cannedMessageModuleConfig.messages` ('|'-split);
+    // we re-read on every entry so app-side changes appear without us
+    // needing to subscribe to config-change events.
+    std::vector<MenuItem> cannedListItems;
+    std::vector<std::string> cannedListLabels;
+    std::vector<std::function<void()>> cannedListActions;
+
+    // Optional reference to the system MenuModule, used to flash transient
+    // alerts like "Position sent." Wired by Setup.cpp.
+    MenuModule* menuModule = nullptr;
 };
 
 } // namespace InkHUD2
