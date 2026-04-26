@@ -144,20 +144,22 @@ void Events::syncNodes() {
             entry.distanceMeters = (int32_t)GeoCoord::latLongToMeter(theirLat, theirLong, ourLat, ourLong);
         }
 
-        // Copy names
+        // Copy names — fall back to the same defaults NodeDB.cpp uses for owner
+        // when a NodeInfo packet has not (yet) been received from this node.
         if (node->has_user && node->user.short_name[0] != '\0') {
             strncpy(entry.shortName, node->user.short_name, sizeof(entry.shortName) - 1);
             entry.shortName[sizeof(entry.shortName) - 1] = '\0';
         } else {
-            // shortName is 5 chars: "!XXX\0" (3 hex digits max)
-            snprintf(entry.shortName, sizeof(entry.shortName), "!%03x", (unsigned int)(node->num & 0xFFF));
+            // Match NodeDB owner default: 4 hex digits of node num, no '!' prefix
+            snprintf(entry.shortName, sizeof(entry.shortName), "%04x", (unsigned int)(node->num & 0xFFFF));
         }
 
         if (node->has_user && node->user.long_name[0] != '\0') {
             strncpy(entry.longName, node->user.long_name, sizeof(entry.longName) - 1);
             entry.longName[sizeof(entry.longName) - 1] = '\0';
         } else {
-            entry.longName[0] = '\0';
+            // Match NodeDB owner default: "Meshtastic XXXX"
+            snprintf(entry.longName, sizeof(entry.longName), "Meshtastic %04x", (unsigned int)(node->num & 0xFFFF));
         }
 
         nodeListModule->updateNode(entry);
