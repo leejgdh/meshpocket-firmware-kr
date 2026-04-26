@@ -1,5 +1,11 @@
 #pragma once
 
+// MapModule is currently excluded from the build (see PlatformioConfig.ini's
+// `build_src_filter` line dropping MapModule.cpp). The single-button UX
+// model didn't fit the module's MAP/SETTINGS/POSITION sub-state machine, so
+// it is parked here until reworked. Header is kept in-tree to make re-enable
+// a single-config-line change.
+
 #include "Module.h"
 #include "../UI/ContentArea.h"
 #include "../UI/MenuList.h"

@@ -43,6 +43,8 @@ std::vector<DMThread> dmThreads;
 
 thread 당 deque 최대 `MAX_MESSAGES_PER_DM = 20` (채널보다 많음 — DM은 보통 더 의미 있는 대화가 오래 가니까).
 
+`dmThreads` 자체도 cap 있음: `MAX_DM_THREADS = 16`. 새 peer 가 17번째로 들어오면 LRU evict — 가장 최근 메시지 timestamp 가 가장 오래된 thread 를 제거. 단, **현재 보고 있는 thread 는 절대 evict 안함**. 빈 thread (메시지 없는) 가 우선 evict 대상. cap 없으면 busy mesh 에서 무한 증가.
+
 ### 현재 보고 있는 view
 
 ```cpp
@@ -219,7 +221,7 @@ MAIN 화면에서 SHORT_PRESS를 누르면 QUICK_MENU로 진입한다. 컨텍스
 
 **Request Position** (`requestCurrentPosition`):
 - DM_THREAD 한정. `wantReplies=true` 로 보내는 점만 Share Position 과 다름 — 우리 위치도 같이 가지만 peer 에게 답신 요청 플래그가 붙음
-- peer 가 응답하면 NodeDB 가 자동 업데이트되고, 우리 InkHUD2 의 node-status observer 가 그걸 받아서 NodeListModule/MapModule 의 위치 정보를 갱신함. 별도 UI 표시 안 함 (텍스트 메시지가 아니라 NodeDB level 갱신이라).
+- peer 가 응답하면 NodeDB 가 자동 업데이트되고, 우리 InkHUD2 의 node-status observer 가 그걸 받아서 NodeListModule 의 위치 정보를 갱신함. 별도 UI 표시 안 함 (텍스트 메시지가 아니라 NodeDB level 갱신이라).
 - 즉 Message 화면에 답신이 메시지로 안 뜸 — 노드 화면에서 "최근 위치 받음" 정도로 반영됨
 
 Position 패킷은 `POSITION_APP` portnum이라 우리의 outgoing TEXT_MESSAGE_APP hook이 잡지 않는다. 즉 Message 화면에 자기 위치 메시지로 미러되지는 않음 — 의도된 동작 (위치는 채팅 항목이 아님). 송신 확인은 menuModule alert ("Position sent." / "Position requested.") 로 사용자에게 즉각 피드백.

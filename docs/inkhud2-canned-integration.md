@@ -177,7 +177,7 @@ void notifyOutgoing(const meshtastic_MeshPacket *mp) { notifyObservers(mp); }
 if (textMessageModule && p && p->decoded.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP &&
     p->decoded.payload.size > 0) {
     meshtastic_MeshPacket outgoing = *p;
-    outgoing.from = nodeDB->getNodeNum();    // handleToRadio가 0으로 zero하기 때문
+    outgoing.from = nodeDB->getNodeNum();    // phone 경로의 handleToRadio가 0으로 zero하기 때문
     textMessageModule->notifyOutgoing(&outgoing);
 }
 ```

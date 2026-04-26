@@ -15,7 +15,6 @@ namespace InkHUD2 {
 class MessageModule;
 class BatteryModule;
 class NodeListModule;
-class MapModule;
 class MenuModule;
 
 // Events - hooks into Meshtastic event system
@@ -25,7 +24,7 @@ public:
 
     // Initialize and start observing
     void begin(MessageModule* msgModule, BatteryModule* batModule, NodeListModule* nodeModule,
-               MapModule* mapMod = nullptr, MenuModule* menuMod = nullptr);
+               MenuModule* menuMod = nullptr);
 
     // Stop observing
     void stop();
@@ -66,7 +65,6 @@ private:
     MessageModule* messageModule = nullptr;
     BatteryModule* batteryModule = nullptr;
     NodeListModule* nodeListModule = nullptr;
-    MapModule* mapModule = nullptr;
     MenuModule* menuModule = nullptr;
 };
 

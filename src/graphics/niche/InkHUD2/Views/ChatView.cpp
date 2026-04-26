@@ -13,8 +13,7 @@ namespace InkHUD2 {
 constexpr float ELONGATED_BODY_SCALE = 0.89f;
 
 ChatView::ChatView(Buffer* buffer, const Layout* layout, TextRenderer* text)
-    : buffer(buffer), layout(layout), textRenderer(text),
-      getNodeName(nullptr), formatTimeFn(nullptr), myNodeNum(0) {}
+    : buffer(buffer), layout(layout), textRenderer(text), myNodeNum(0) {}
 
 void ChatView::setCallbacks(GetNodeNameFn getName, FormatTimeFn formatTime, uint32_t myNode) {
     getNodeName = getName;

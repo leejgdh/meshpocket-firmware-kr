@@ -5,6 +5,7 @@
 #include "../Text/TextRenderer.h"
 #include "../UI/ContentArea.h"
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace InkHUD2 {
@@ -27,9 +28,11 @@ struct ChatMessage {
     uint8_t hopsAway;
 };
 
-// Callback type for getting node names
-using GetNodeNameFn = const char* (*)(uint32_t nodeNum);
-using FormatTimeFn = const char* (*)(uint32_t timestamp);
+// Callbacks for resolving display info. `std::function` so callers can pass
+// member-bound lambdas (`[this](...){...}`) instead of routing through file-
+// scope trampolines.
+using GetNodeNameFn = std::function<const char*(uint32_t nodeNum)>;
+using FormatTimeFn = std::function<const char*(uint32_t timestamp)>;
 
 // ChatView - renders chat-style messages (bottom-up, multiple messages)
 class ChatView {

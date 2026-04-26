@@ -42,34 +42,6 @@ extern meshtastic_CannedMessageModuleConfig cannedMessageModuleConfig;
 namespace InkHUD2 {
 
 // ======================================================================
-// Static helpers
-// ======================================================================
-
-// Used by ChatView's time-formatter callback. Pinned during render so the
-// static formatter can reach this module's myNodeNum / millis() context.
-static const MessageModule* g_currentModule = nullptr;
-
-static const char* staticFormatTime(uint32_t timestamp) {
-    if (g_currentModule) {
-        if (timestamp == 0) return "";
-        static char buf[16];
-        uint32_t nowSec = millis() / 1000;
-        uint32_t ageSec = (nowSec > timestamp) ? (nowSec - timestamp) : 0;
-        if (ageSec < 60) {
-            snprintf(buf, sizeof(buf), "%lus", (unsigned long)ageSec);
-        } else if (ageSec < 3600) {
-            snprintf(buf, sizeof(buf), "%lum", (unsigned long)(ageSec / 60));
-        } else if (ageSec < 86400) {
-            snprintf(buf, sizeof(buf), "%luh", (unsigned long)(ageSec / 3600));
-        } else {
-            snprintf(buf, sizeof(buf), "%lud", (unsigned long)(ageSec / 86400));
-        }
-        return buf;
-    }
-    return "";
-}
-
-// ======================================================================
 // Construction
 // ======================================================================
 
@@ -100,8 +72,6 @@ void MessageModule::renderMain(RenderContext& ctx) {
     Buffer* buffer = ctx.getBuffer();
     const Font* font = ctx.getFont();
     if (!buffer || !font) return;
-
-    g_currentModule = this;
 
     uint16_t padding = layout->padding();
 
@@ -168,8 +138,8 @@ void MessageModule::renderMain(RenderContext& ctx) {
     // by comparing each message's `from` against the configured myNodeNum.
     ChatView chatView(buffer, layout, &textRenderer);
     chatView.setCallbacks(
-        getShortName ? getShortName : defaultNodeName,
-        staticFormatTime,
+        getShortName ? GetNodeNameFn(getShortName) : GetNodeNameFn(&defaultNodeName),
+        [this](uint32_t timestamp) { return formatTime(timestamp); },
         myNodeNum
     );
 
@@ -943,11 +913,43 @@ DMThread* MessageModule::findDMThread(uint32_t peerNodeNum) {
 DMThread* MessageModule::findOrCreateDMThread(uint32_t peerNodeNum) {
     if (peerNodeNum == 0) return nullptr;
     if (DMThread* existing = findDMThread(peerNodeNum)) return existing;
+    evictOldestDMThreadIfNeeded();
     DMThread th;
     th.nodeNum = peerNodeNum;
     th.hasUnread = false;
     dmThreads.push_back(std::move(th));
     return &dmThreads.back();
+}
+
+// Evict the LRU thread (oldest most-recent-message) when at capacity.
+// Skips the currently-displayed thread so the user doesn't lose the chat
+// they're looking at. Empty threads (no messages yet) are evicted first.
+void MessageModule::evictOldestDMThreadIfNeeded() {
+    if (dmThreads.size() < MAX_DM_THREADS) return;
+
+    // While the user is browsing the DM list, don't yank entries out from
+    // under them — `dmListItems` lambdas capture peer numbers and would
+    // dangle (visually, not memory-wise) if their target thread vanished
+    // mid-browse. Cap is allowed to overshoot until the menu closes.
+    if (state == State::DM_LIST) return;
+
+    size_t victimIdx = SIZE_MAX;
+    uint32_t victimTs = UINT32_MAX;
+    for (size_t i = 0; i < dmThreads.size(); ++i) {
+        const DMThread& th = dmThreads[i];
+        if (currentView == ViewKind::DM_THREAD && th.nodeNum == currentDMNodeNum) {
+            continue;
+        }
+        // Empty thread: treat as ts=0 (most-evictable)
+        uint32_t ts = th.messages.empty() ? 0 : th.messages.front().timestamp;
+        if (ts < victimTs) {
+            victimTs = ts;
+            victimIdx = i;
+        }
+    }
+    if (victimIdx != SIZE_MAX) {
+        dmThreads.erase(dmThreads.begin() + victimIdx);
+    }
 }
 
 // ======================================================================
@@ -1003,9 +1005,10 @@ void MessageModule::setMessage(uint32_t from, uint32_t to, const char* text,
     }
     if (tabIndex == SIZE_MAX) return;
 
-    while (channelMessages.size() <= tabIndex) {
-        channelMessages.push_back(std::deque<ChannelMessage>());
-    }
+    // Invariant: channels.size() == channelMessages.size(), maintained by
+    // addChannel(). If they ever drift it's a setup-order bug, not something
+    // to silently paper over here.
+    if (tabIndex >= channelMessages.size()) return;
 
     ChannelMessage cm;
     cm.from = from;
@@ -1097,7 +1100,20 @@ const char* MessageModule::getChannelName(uint8_t channel) const {
 }
 
 const char* MessageModule::formatTime(uint32_t timestamp) const {
-    return staticFormatTime(timestamp);
+    if (timestamp == 0) return "";
+    static char buf[16];
+    uint32_t nowSec = millis() / 1000;
+    uint32_t ageSec = (nowSec > timestamp) ? (nowSec - timestamp) : 0;
+    if (ageSec < 60) {
+        snprintf(buf, sizeof(buf), "%lus", (unsigned long)ageSec);
+    } else if (ageSec < 3600) {
+        snprintf(buf, sizeof(buf), "%lum", (unsigned long)(ageSec / 60));
+    } else if (ageSec < 86400) {
+        snprintf(buf, sizeof(buf), "%luh", (unsigned long)(ageSec / 3600));
+    } else {
+        snprintf(buf, sizeof(buf), "%lud", (unsigned long)(ageSec / 86400));
+    }
+    return buf;
 }
 
 const char* MessageModule::defaultNodeName(uint32_t nodeNum) {

@@ -10,7 +10,9 @@
 #include "Modules/MenuModule.h"
 #include "Modules/MessageModule.h"
 #include "Modules/NodeListModule.h"
-#include "Modules/MapModule.h"
+// MapModule intentionally excluded from build — UX deemed unsuitable for the
+// single-button MeshPocket. Re-add the include + instance + Events wiring
+// when the module is reworked to fit the global short/long-press model.
 
 #include "graphics/niche/Drivers/Backlight/LatchingBacklight.h"
 #include "graphics/niche/Inputs/TwoButton.h"
@@ -39,7 +41,6 @@ static BootModule* bootModule = nullptr;
 static MenuModule* menuModule = nullptr;
 static MessageModule* messageModule = nullptr;
 static NodeListModule* nodeListModule = nullptr;
-static MapModule* mapModule = nullptr;
 static CannedMessageModule* cannedMessageModule = nullptr;
 static Events* inkhud2Events = nullptr;
 
@@ -113,7 +114,6 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
     menuModule = new MenuModule();
     messageModule = new MessageModule();
     nodeListModule = new NodeListModule();
-    mapModule = new MapModule();
     cannedMessageModule = new CannedMessageModule();
 
     // Set up menu actions
@@ -259,6 +259,9 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
 
     alertsSubMenu[0].label = "< Back";
     alertsSubMenu[0].type = MenuItemType::BACK;
+    // BACK items don't fire onChange, but pin a no-op so any future code
+    // that walks the array uniformly never lands in an empty std::function.
+    alertsOnChange[0] = []() {};
 
     for (uint8_t i = 0; i < configuredCount; i++) {
         uint8_t chIdx = configuredChannels[i];
@@ -317,7 +320,6 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
 
     // Link modules
     nodeListModule->setMenuModule(menuModule);
-    mapModule->setMenuModule(menuModule);
     cannedMessageModule->setMenuModule(menuModule);
     messageModule->setMenuModule(menuModule);   // for Quick menu's "Position sent" alert
 
@@ -344,11 +346,7 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
 
     hud.addModule(nodeListModule);
     hud.addModule(messageModule);
-    // mapModule intentionally not added to the layout cycle — UX deemed
-    // not useful enough on MeshPocket and the Map's own state machine
-    // (MAP/SETTINGS/POSITION) clashes with the global short/long-press
-    // model. Instance is still created so Events.cpp can keep node-position
-    // bookkeeping in sync if we re-enable it later.
+    // MapModule intentionally not built (see include comment at top of file).
 
     // Configure
     hud.setSlotCount(1);
@@ -360,7 +358,7 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
 
     // Start events
     inkhud2Events = new Events();
-    inkhud2Events->begin(messageModule, batteryModule, nodeListModule, mapModule, menuModule);
+    inkhud2Events->begin(messageModule, batteryModule, nodeListModule, menuModule);
 
     // Backlight
     if (config.hasBacklight && config.backlightPin >= 0) {

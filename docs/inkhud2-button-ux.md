@@ -100,9 +100,14 @@ TwoButton 콜백
   - SHORT_PRESS — 다음 항목
   - LONG_PRESS — 활성화
 
-### MapModule (현재 비활성, [Modules/MapModule.cpp](../src/graphics/niche/InkHUD2/Modules/MapModule.cpp))
+### MapModule (빌드 제외, [Modules/MapModule.cpp](../src/graphics/niche/InkHUD2/Modules/MapModule.cpp))
 
-레이아웃 사이클에서 빠져있어 사용자 시각엔 없다. 코드는 남아있고 자체 상태머신(MAP/SETTINGS/POSITION)을 가짐. 부활시킬 때는 LONG_PRESS = cycle, DOUBLE_TAP = SETTINGS 진입으로 일반 룰에 맞춰 손봐야 함.
+`PlatformioConfig.ini` 의 `build_src_filter` 에서 `MapModule.cpp` 를 제외해 컴파일 자체에서 빠져있다. 헤더는 남아있지만 어디서도 include 하지 않으므로 빌드 산출물에 들어가지 않음. 부활시키려면:
+
+1. `src/graphics/niche/InkHUD/PlatformioConfig.ini` 에서 `-<.../MapModule.cpp>` 라인 제거
+2. `Setup.cpp` 에 인스턴스 생성 + `setMenuModule` + `addModule` 추가
+3. `Events::begin` 시그니처에 `MapModule*` 인자 다시 추가하고 `syncNodes()` 안에 MapModule 위치 갱신 블록 복구
+4. 자체 상태머신(MAP/SETTINGS/POSITION) 을 글로벌 룰(LONG_PRESS = cycle, DOUBLE_TAP = SETTINGS) 에 맞춰 리워크
 
 ## 트레이드오프 — DOUBLE_TAP 활성화의 비용
 

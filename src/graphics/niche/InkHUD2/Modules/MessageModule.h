@@ -185,8 +185,15 @@ private:
     std::vector<std::deque<ChannelMessage>> channelMessages;
 
     // === DM ===
+    // Hard cap on simultaneously-tracked DM peers. When a new peer would push
+    // us past the cap we evict the thread whose newest message is oldest
+    // (LRU on most-recent activity). The currently-displayed thread is never
+    // evicted. Without this cap a busy mesh would grow `dmThreads` without
+    // bound over long uptime.
     std::vector<DMThread> dmThreads;
     static constexpr size_t MAX_MESSAGES_PER_DM = 20;
+    static constexpr size_t MAX_DM_THREADS = 16;
+    void evictOldestDMThreadIfNeeded();
 
     // === Current MAIN view ===
     ViewKind currentView = ViewKind::DM_THREAD;

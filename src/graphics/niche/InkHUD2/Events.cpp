@@ -7,7 +7,6 @@
 #include "Modules/MessageModule.h"
 #include "Modules/BatteryModule.h"
 #include "Modules/NodeListModule.h"
-#include "Modules/MapModule.h"
 #include "Modules/MenuModule.h"
 #include "modules/TextMessageModule.h"
 #include "NodeDB.h"
@@ -50,11 +49,10 @@ static const char* getLongNameFromDB(uint32_t nodeNum) {
 }
 
 void Events::begin(MessageModule* msgModule, BatteryModule* batModule, NodeListModule* nodeModule,
-                   MapModule* mapMod, MenuModule* menuMod) {
+                   MenuModule* menuMod) {
     messageModule = msgModule;
     batteryModule = batModule;
     nodeListModule = nodeModule;
-    mapModule = mapMod;
     menuModule = menuMod;
 
     // Set up node name callbacks
@@ -92,7 +90,6 @@ void Events::stop() {
     messageModule = nullptr;
     batteryModule = nullptr;
     nodeListModule = nullptr;
-    mapModule = nullptr;
     menuModule = nullptr;
 }
 
@@ -163,26 +160,6 @@ void Events::syncNodes() {
         }
 
         nodeListModule->updateNode(entry);
-
-        // Also update MapModule if available
-        if (mapModule && entry.hasPosition) {
-            MapNode mapEntry;
-            mapEntry.nodeNum = entry.nodeNum;
-            strncpy(mapEntry.shortName, entry.shortName, sizeof(mapEntry.shortName));
-            strncpy(mapEntry.longName, entry.longName, sizeof(mapEntry.longName));
-            mapEntry.latitude = entry.latitude;
-            mapEntry.longitude = entry.longitude;
-            mapEntry.distanceMeters = entry.distanceMeters;
-            mapEntry.hopsAway = entry.hopsAway;
-            mapEntry.isFavorite = node->is_favorite;  // From Meshtastic NodeDB
-            // mapEntry.isOwnNode already = false by default
-            mapModule->updateNode(mapEntry);
-        }
-    }
-
-    // Update MapModule with our own position
-    if (mapModule && ourNode && nodeDB->hasValidPosition(ourNode)) {
-        mapModule->setOwnPosition(ourNode->position.latitude_i, ourNode->position.longitude_i);
     }
 }
 
@@ -191,7 +168,9 @@ int Events::onReceiveTextMessage(const meshtastic_MeshPacket* packet) {
 
     // We accept both incoming and outgoing messages here. Outgoing packets
     // arrive via TextMessageModule::notifyOutgoing() (called by
-    // MeshService::handleToRadio with `from` rewritten to our nodeNum).
+    // MeshService::sendToMesh with `from` rewritten to our nodeNum). Hooking
+    // sendToMesh — the funnel for ALL outbound packets — also captures
+    // firmware-internal sends (canned messages, position requests).
 
     // Extract message text
     const char* text = reinterpret_cast<const char*>(packet->decoded.payload.bytes);
