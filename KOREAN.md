@@ -63,6 +63,10 @@ InkHUD(1) → InkHUD2 전환으로 다음 기능들이 빠진다 (InkHUD2는 작
 ### 펌웨어 버전
 이 fork의 base는 Meshtastic **2.7.20**. 공식은 현재 stable release 없이 alpha만 내고 있으며 (2.7.18 ~ 2.7.22 alpha 범위), 우리 fork는 그 한가운데로 공식 alpha보다 단 2버전(2.7.21, 2.7.22) 뒤. 거의 최신 트랙이라 단기 rebase 필요성은 낮다.
 
+## 펌웨어 기능 분석
+
+펌웨어 동작 방식(부팅 흐름, mesh 패킷 처리, 모듈 시스템, InkHUD2 내부 동작, 전원 관리, 본인이 손댈 만한 위치)은 [ARCHITECTURE.md](ARCHITECTURE.md) 참조.
+
 ## 라이선스
 
 Meshtastic 본체와 동일하게 **GPL v3**.
