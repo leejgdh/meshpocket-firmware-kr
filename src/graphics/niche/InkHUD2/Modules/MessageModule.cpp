@@ -37,6 +37,7 @@ extern meshtastic_CannedMessageModuleConfig cannedMessageModuleConfig;
 
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <Arduino.h>
 
 namespace InkHUD2 {
@@ -960,7 +961,10 @@ void MessageModule::setMessage(uint32_t from, uint32_t to, const char* text,
                                uint8_t channel, uint32_t timestamp,
                                float snr, uint8_t hopsAway) {
     if (!text) return;
-    uint32_t ts = timestamp ? timestamp : (millis() / 1000);
+    // Keep timestamp as-is. 0 signals "no valid time" and formatTime renders
+    // an empty label. Don't substitute millis()/1000 — that's uptime, not
+    // epoch, and would render a wrong absolute time.
+    uint32_t ts = timestamp;
 
     if (channel == CHANNEL_DM) {
         // Pick the peer side of the conversation as the thread key.
@@ -1100,19 +1104,16 @@ const char* MessageModule::getChannelName(uint8_t channel) const {
 }
 
 const char* MessageModule::formatTime(uint32_t timestamp) const {
+    // Absolute local time HH:MM in 24h. main.cpp installs the device's tzdef
+    // via setenv("TZ", ...) + tzset() at boot, so localtime() honours it.
+    // timestamp == 0 means we never had RTC sync for this message; render
+    // empty rather than an incorrect "00:00".
     if (timestamp == 0) return "";
-    static char buf[16];
-    uint32_t nowSec = millis() / 1000;
-    uint32_t ageSec = (nowSec > timestamp) ? (nowSec - timestamp) : 0;
-    if (ageSec < 60) {
-        snprintf(buf, sizeof(buf), "%lus", (unsigned long)ageSec);
-    } else if (ageSec < 3600) {
-        snprintf(buf, sizeof(buf), "%lum", (unsigned long)(ageSec / 60));
-    } else if (ageSec < 86400) {
-        snprintf(buf, sizeof(buf), "%luh", (unsigned long)(ageSec / 3600));
-    } else {
-        snprintf(buf, sizeof(buf), "%lud", (unsigned long)(ageSec / 86400));
-    }
+    static char buf[8];
+    time_t t = (time_t)timestamp;
+    struct tm* lt = localtime(&t);
+    if (!lt) return "";
+    snprintf(buf, sizeof(buf), "%02d:%02d", lt->tm_hour, lt->tm_min);
     return buf;
 }
 
