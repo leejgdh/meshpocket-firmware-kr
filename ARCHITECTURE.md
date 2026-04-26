@@ -385,6 +385,117 @@ LoRa 수신
 
 ---
 
+## I. 시스템 동작 주기
+
+### OSThread runOnce 반환값 규칙
+
+[OSThread.cpp:98-99](src/concurrency/OSThread.cpp#L98)
+
+| 반환값 | 의미 |
+|---|---|
+| 음수 (`RUN_SAME = -1`) | 이전 주기 유지 |
+| 0 이상 | 다음 호출까지 대기 ms |
+| `INT32_MAX` | 사실상 무한 — event-driven으로만 깨어남 |
+
+### 활성 thread 주기 일람
+
+| Thread | 기본 주기 | 위치 | 비고 |
+|---|---|---|---|
+| **InkHUD2** | 100ms | [InkHUD2.cpp:101-133](src/graphics/niche/InkHUD2/InkHUD2.cpp#L101) | 변경 감지 시 render() |
+| **PositionModule** | 5,000ms | [PositionModule.cpp:404](src/modules/PositionModule.cpp#L404) | broadcast 자체는 별도 주기 |
+| **NeighborInfoModule** | `update_interval` (기본 1시간) | [NeighborInfoModule.cpp:48-49](src/modules/NeighborInfoModule.cpp#L48) | |
+| **NodeInfoModule** | 30초 후 시작 → 정주기 | [NodeInfoModule.cpp](src/modules/NodeInfoModule.cpp) | |
+| **StatusLEDModule** | 1,000ms (충전 중 250ms) | [StatusLEDModule.cpp:75](src/modules/StatusLEDModule.cpp#L75) | 배터리 임계 따라 변경 |
+| **AmbientLightingThread** | 30,000ms | [AmbientLightingThread.h:116](src/AmbientLightingThread.h#L116) | RGB LED |
+| **AudioThread** | 100ms | [AudioThread.h:90](src/AudioThread.h#L90) | 비활성 시 sleep |
+| **Router** | `INT32_MAX` (event-driven) | [Router.cpp:144](src/mesh/Router.cpp#L144) | 패킷 수신/송신 시 깨어남 |
+| **PowerFSMThread** | 100ms | (PowerFSM.cpp) | 전원 상태 전이 polling |
+
+### Broadcast 주기 (mesh 자동 송신)
+
+**모든 default 상수는 [src/mesh/Default.h](src/mesh/Default.h)에 정의됨**. `IF_ROUTER(라우터값, 일반값)` 매크로로 device 역할에 따라 분기.
+
+| 활동 | 기본값 (일반/라우터) | 설정 키 | 비고 |
+|---|---|---|---|
+| **Position broadcast** | 1시간 / 12시간 | `position.position_broadcast_secs` | TRACKER 역할은 우선순위 ↑ |
+| **Smart position 최소 시간** | 5분 | `position.position_broadcast_smart_minimum_interval_secs` | smart 모드 활성 시 |
+| **Smart position 최소 거리** | 100m | `position.broadcast_smart_minimum_distance` | 이 이상 이동해야 송신 |
+| **GPS update** | 2분 / 1일 | `position.gps_update_interval` | GPS 폴링 |
+| **NodeInfo broadcast** | 3시간 | (config 키 없음, 자동) | 자기 user info |
+| **NeighborInfo broadcast** | 6시간 | `moduleConfig.neighbor_info.update_interval` | |
+| **Device telemetry** | 1시간 / 12시간 | `telemetry.device_update_interval` | 배터리/airtime/uptime |
+| **Environment telemetry** | 1시간 / 12시간 | `telemetry.environment_update_interval` | 센서 데이터 |
+| **Power telemetry** | 1시간 / 12시간 | `telemetry.power_update_interval` | |
+
+**노드 수 기반 스케일링** ([Default.h:62-87](src/mesh/Default.h#L62)) — `congestionScalingCoefficient`:
+- ≤40 노드: 1.0× (변경 없음)
+- 40 초과: `1.0 + (노드수 - 40) × 0.075` (LoRa preset에 따라 계수 변경)
+
+→ 큰 mesh에서는 broadcast 주기가 자동으로 늘어남 (혼잡 방지)
+
+### Default 상수 동작 ([Default.cpp:12-16](src/mesh/Default.cpp#L12))
+
+`Default::getConfiguredOrDefaultMs(configValue, defaultValue)` 함수가 처리:
+- 앱에서 0 설정 → default 적용
+- 양수 설정 → 그 값 적용
+- 즉 사용자가 "기본값으로" 하려면 0 입력하면 됨
+
+### 라디오 듀티 사이클
+
+[PositionModule.cpp:423-425](src/modules/PositionModule.cpp#L423) 등에서 송신 전 체크:
+- `airTime->isTxAllowedChannelUtil()` — 채널 사용률 25% 미만일 때만 (TRACKER는 40%)
+- `airTime->isTxAllowedAirUtil()` — 전체 airtime 한도 (region별 LoRa 규제)
+- `Airtime` 클래스가 preamble + payload time on air 누적 추적
+
+### BLE Advertising
+
+| 항목 | 값 |
+|---|---|
+| 연결 대기 | `default_wait_bluetooth_secs` = 60초 (라우터 1초) |
+| iOS connection interval | 15~100ms |
+| iOS slave latency | 0 |
+| advertising interval | [확인 필요 — NRF52Bluetooth.cpp 추가 분석 필요] |
+
+### 절전 상태별 변화
+
+[PowerFSM.h:13-30](src/PowerFSM.h#L13), [PowerFSM.cpp:82-151](src/PowerFSM.cpp#L82)
+
+| 상태 | 트리거 | 활성 | OFF |
+|---|---|---|---|
+| **ON** | 정상 | 모든 thread, BLE 광고, 라디오 RX/TX, 화면 | — |
+| **POWER** | USB/AC 연결 | 모든 thread, 화면 항상 ON | — |
+| **DARK** | `screen_on_secs` 경과 | 라디오, BLE, telemetry, position | 화면 |
+| **LS** | `wait_bluetooth_secs` 경과 | 30ms 주기로만 깨어남, BLE 광고 유지 | screen, audio, eth/wifi |
+| **SDS** | `ls_secs` 경과 | (거의 모든 것 OFF) | 라디오 RX, BLE 광고, 모든 thread |
+
+**TRACKER/SENSOR 역할 패턴**: 깨어남 → Position/Telemetry 전송 → `position_broadcast_secs` 동안 deep sleep ([PositionModule.cpp:386-399](src/modules/PositionModule.cpp#L386))
+
+### 화면 자동 OFF
+
+| 키 | 일반 기기 | 라우터 |
+|---|---|---|
+| `display.screen_on_secs` | 10분 (600s) | 1초 |
+| `power.ls_secs` | 5분 (300s) | 1일 |
+| `power.sds_secs` | 비활성(`UINT32_MAX`) | 1일 |
+
+### 사용자가 앱에서 조절 가능한 주기 요약
+
+가장 자주 만지는 것:
+- **Position 빈도** — `position.position_broadcast_secs` (TRACKER 역할 + smart 옵션 조합)
+- **GPS 폴링** — `position.gps_update_interval`
+- **Telemetry 빈도** — `telemetry.{device,environment,power}_update_interval`
+- **화면 자동 OFF** — `display.screen_on_secs`
+- **절전 진입** — `power.ls_secs`, `power.sds_secs`
+- **Device role** — `device.role` (CLIENT/ROUTER/TRACKER/SENSOR — 위 모든 default가 자동 조정됨)
+
+### 미확인 ([확인 필요])
+- BLE advertising 실제 간격 값
+- Router 이벤트 깨움 메커니즘 (`setReceivedMessage()` 구현)
+- NodeDB flash save 빈도 (매 변경 / 주기적 / 종료 시 중)
+- LS 상태에서 CPU 클록 down 정도
+
+---
+
 ## 참고
 
 - 폴더 구조 분석은 [KOREAN.md](KOREAN.md) 참조
