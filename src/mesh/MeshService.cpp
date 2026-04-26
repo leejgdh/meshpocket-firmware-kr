@@ -19,6 +19,7 @@
 #include "modules/NodeInfoModule.h"
 #include "modules/PositionModule.h"
 #include "modules/RoutingModule.h"
+#include "modules/TextMessageModule.h"
 #include "power.h"
 #include <assert.h>
 #include <string>
@@ -199,6 +200,11 @@ void MeshService::handleToRadio(meshtastic_MeshPacket &p)
                   const StoredMessage &sm = messageStore.addFromPacket(p);
                   graphics::MessageRenderer::handleNewMessage(nullptr, sm, p); // notify UI
               })
+
+    // (Outgoing-text hook is now in sendToMesh — that's the common funnel
+    // for both phone-originated and locally-originated outbound packets, so
+    // hooking here would miss firmware-internal sends like canned messages.)
+
     // Send the packet into the mesh
     DEBUG_HEAP_BEFORE;
     auto a = packetPool.allocCopy(p);
@@ -246,6 +252,23 @@ void MeshService::sendToMesh(meshtastic_MeshPacket *p, RxSource src, bool ccToPh
 {
     uint32_t mesh_packet_id = p->id;
     nodeDB->updateFrom(*p); // update our local DB for this packet (because phone might have sent position packets etc...)
+
+    // Notify TextMessageModule observers about outgoing text messages so UI
+    // layers (e.g. InkHUD2) can mirror sent DMs and broadcasts alongside
+    // received ones. We hook here — the common funnel for ALL outbound
+    // packets — instead of in handleToRadio, so that firmware-internal sends
+    // (canned messages, etc.) are also captured.
+    //
+    // For phone-originated packets handleToRadio has already zeroed p.from
+    // for security; for locally-generated packets p.from may already be set.
+    // Either way we override on the copy passed to observers so it always
+    // identifies as our nodeNum.
+    if (textMessageModule && p && p->decoded.portnum == meshtastic_PortNum_TEXT_MESSAGE_APP &&
+        p->decoded.payload.size > 0) {
+        meshtastic_MeshPacket outgoing = *p;
+        outgoing.from = nodeDB->getNodeNum();
+        textMessageModule->notifyOutgoing(&outgoing);
+    }
 
     // Note: We might return !OK if our fifo was full, at that point the only option we have is to drop it
     ErrorCode res = router->sendLocal(p, src);

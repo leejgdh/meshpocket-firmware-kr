@@ -22,6 +22,20 @@ class TextMessageModule : public SinglePortModule, public Observable<const mesht
 
     bool recentlySeen(uint32_t id);
 
+    /**
+     * Notify observers about an outgoing text-message packet.
+     *
+     * The base TextMessageModule only fires its observable for inbound
+     * messages (via `handleReceived`). InkHUD2 needs the same hook for
+     * messages our own node sends — typically arriving here from the
+     * phone via PhoneAPI / `MeshService::handleToRadio` — so it can mirror
+     * sent DMs and broadcasts in its UI.
+     *
+     * Caller is responsible for filling `mp.from` with our nodeNum since
+     * MeshService deliberately zeros it on outbound packets.
+     */
+    void notifyOutgoing(const meshtastic_MeshPacket *mp) { notifyObservers(mp); }
+
   protected:
     /** Called to handle a particular incoming message
      *
