@@ -15,6 +15,9 @@
 - [E. InkHUD2 내부 동작](#e-inkhud2-내부-동작) — 이벤트→화면, Module/SystemModule, 버튼 입력
 - [F. PowerFSM 절전](#f-powerfsm-절전) — 4가지 절전 상태
 - [G. 향후 작업 hook 포인트](#g-향후-작업-hook-포인트) — 어디를 손대면 무엇이 바뀌는지
+- [H. iPhone 앱 상호작용](#h-iphone-앱-상호작용) — BLE GATT, ToRadio/FromRadio, PhoneAPI 상태 머신, AdminMessage
+- [I. 시스템 동작 주기](#i-시스템-동작-주기) — OSThread 주기, broadcast 주기, 절전별 주기 변경
+- [J. 하드웨어 연결 체크 및 컨트롤](#j-하드웨어-연결-체크-및-컨트롤) — I2C 자동 감지, 배터리, 라디오 health, 센서
 
 ---
 
@@ -262,6 +265,123 @@ TwoButton 하드웨어
 1. **[InkHUD2/Setup.cpp](src/graphics/niche/InkHUD2/Setup.cpp)** — 메뉴, wiring, 버튼 동작. UI 변경의 중심
 2. **[InkHUD2/Modules/](src/graphics/niche/InkHUD2/Modules/)** — 새 화면 추가 (Module 상속)
 3. **[modules/](src/modules/)** — 새 mesh 기능 추가 (MeshModule 상속)
+
+---
+
+## H. iPhone 앱 상호작용
+
+### BLE GATT 구조
+
+Service UUID: `6ba1b218-15a8-461f-9fa8-5dcae273eafd` ([NRF52Bluetooth.cpp:11-15](src/platform/nrf52/NRF52Bluetooth.cpp#L11))
+
+| Characteristic | 속성 | 방향 | 용도 |
+|---|---|---|---|
+| **FromNum** | NOTIFY+READ | 펌웨어→앱 | "새 데이터 있음" 알림 (32-bit 카운터) |
+| **FromRadio** | READ (≤512B) | 펌웨어→앱 | 실제 데이터 (config, NodeDB, 패킷, 로그) |
+| **ToRadio** | WRITE (≤512B) | 앱→펌웨어 | 명령·패킷·설정 변경 |
+| **LogRadio** | NOTIFY+READ | 펌웨어→앱 | 디버그 로그 |
+
+### 페어링 모드
+- `NO_PIN`: 암호화 없이 오픈 (`SECMODE_OPEN`)
+- `FIXED_PIN` / `RANDOM_PIN`: 암호화 + PIN (`SECMODE_ENC_NO_MITM`, MITM 방어 없음)
+- iOS 호환: connection interval 15~100ms, slave latency 0
+- **Hide PIN** 기능: `FIXED_PIN` 모드일 때만 화면에 PIN 안 표시
+
+### ToRadio 메시지 (앱→펌웨어, 6종)
+[mesh.pb.h:1269-1293](src/mesh/generated/meshtastic/mesh.pb.h#L1269)
+- `want_config_id` — 연결 직후 dump 요청 (nonce 포함)
+- `packet` — LoRa 패킷 송신
+- `disconnect` — 연결 해제 알림
+- `xmodemPacket` — 파일 전송
+- `mqttClientProxyMessage` — MQTT 메시지 프록시
+- `heartbeat` — 연결 유지
+
+### FromRadio 메시지 (펌웨어→앱, 14종)
+[mesh.pb.h:1211-1258](src/mesh/generated/meshtastic/mesh.pb.h#L1211)
+- `my_info`, `node_info`, `metadata` — 노드/디바이스 정보
+- `config`, `moduleConfig`, `channel`, `deviceuiConfig` — 설정 dump
+- `config_complete_id` — 동기화 완료 신호 (받은 nonce 그대로 echo)
+- `packet`, `log_record`, `queueStatus`, `clientNotification` — 정상 운영 데이터
+- `fileInfo` — 파일 시스템 정보
+
+### 첫 연결 시퀀스 — PhoneAPI 상태 머신
+
+[PhoneAPI.h:38-51](src/mesh/PhoneAPI.h#L38), [PhoneAPI.cpp:224-524](src/mesh/PhoneAPI.cpp#L224)
+
+```
+1. 앱: ToRadio.want_config_id = <nonce>
+   ↓
+2. 펌웨어: 11단계 dump (각 단계마다 FromNum notify → 앱이 FromRadio read)
+   STATE_SEND_MY_INFO         → 자신의 노드 정보
+   STATE_SEND_UIDATA          → UI config
+   STATE_SEND_OWN_NODEINFO    → 자기 상세
+   STATE_SEND_METADATA        → 펌웨어 버전, hw model
+   STATE_SEND_CHANNELS        → 8채널 모두
+   STATE_SEND_CONFIG          → device/position/power/network/display/lora/bluetooth/security
+   STATE_SEND_MODULECONFIG    → mqtt/serial/telemetry/canned 등 15종
+   STATE_SEND_OTHER_NODEINFOS → 알고 있는 모든 다른 노드
+   STATE_SEND_FILEMANIFEST    → 파일 목록
+   STATE_SEND_COMPLETE_ID     → config_complete_id = <nonce>
+   ↓
+3. STATE_SEND_PACKETS — 정상 운영 (메시지·로그·큐 상태)
+```
+
+**특수 nonce** ([PhoneAPI.h:23-24](src/mesh/PhoneAPI.h#L23)):
+- `69421` (`SPECIAL_NONCE_ONLY_NODES`) — 노드 정보만 요청
+- `69420` (`SPECIAL_NONCE_ONLY_CONFIG`) — 설정만 요청
+
+### AdminMessage 흐름 — Timezone 변경 예시
+
+```
+앱: ToRadio.packet {
+      to: 0xFFFFFFFF (자신),
+      portnum: ADMIN_APP (6),
+      payload: AdminMessage.set_config { device.timezone_offset = ... }
+    }
+  ↓
+PhoneAPI::handleToRadioPacket()
+  → AdminModule::handleReceivedProtobuf()
+  → handleSetConfig() → config.device 메모리에 적용
+  → saveChanges(SEGMENT_CONFIG, requiresReboot)
+  → 필요 시 Bluetooth 잠시 끊고 재부팅
+  ↓
+앱: AdminMessage_get_config_response 또는 ACK 수신
+```
+
+### 로컬(BLE) vs 원격(mesh) admin 권한 ([AdminModule.cpp:96-121](src/modules/AdminModule.cpp#L96))
+
+| 조건 | 로컬 | 원격 |
+|---|---|---|
+| 접근 권한 | 페어링된 앱 | 3개 admin_key 중 하나로 PKI 서명 필수 |
+| SessionKey | 선택 | 필수 (`checkPassKey()`) |
+| 채널 | direct + admin | admin 채널만 (`config.security.admin_channel_enabled`) |
+
+### 텍스트 메시지 송수신
+
+**앱 → LoRa**:
+```
+ToRadio.packet { portnum=TEXT_MESSAGE_APP(1), payload="...", to=대상 }
+  → PhoneAPI::handleToRadioPacket()
+  → Router::enqueuePacket() (TX 큐)
+  → RadioInterface가 LoRa 송신
+```
+
+**LoRa → 앱**:
+```
+LoRa 수신
+  → Router::handleReceived() → 복호화
+  → MeshService → toPhoneQueue
+  → FromRadio.packet (rx_rssi/rx_snr/rx_time 메타 포함)
+```
+
+### 주의할 디테일
+
+- **BLE MTU 512B 한도** — protobuf 메시지가 이걸 넘으면 안 됨 (생성 시 enforce)
+- **`lastToRadio[512]` 중복 탐지** — BLE 재전송 같은 ToRadio 두 번 와도 한 번만 처리 ([NRF52Bluetooth.cpp:158-168](src/platform/nrf52/NRF52Bluetooth.cpp#L158))
+- **`recentToRadioPacketIds[20]`** — 최근 20개 패킷 ID로 송신 중복 방지 ([PhoneAPI.h:59](src/mesh/PhoneAPI.h#L59))
+- **Heartbeat ↔ QueueStatus** — 앱이 heartbeat 보내면 펌웨어가 free_slots 응답해서 송신 가능 여부 알림
+- **StreamAPI vs BluetoothPhoneAPI** — Serial/TCP는 `0x94C3` 프레임 헤더+길이, BLE는 framing 없이 직접. 둘 다 `PhoneAPI` 상속 → 프로토콜 로직 재사용
+- **Reboot 필요 여부** — LoRa RF 파라미터·역할 변경은 reboot 필수. Bluetooth 설정은 불필요 ([AdminModule.cpp:896-901](src/modules/AdminModule.cpp#L896))
 
 ---
 
