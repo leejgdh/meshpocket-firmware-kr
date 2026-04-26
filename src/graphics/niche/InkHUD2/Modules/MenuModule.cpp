@@ -241,8 +241,8 @@ void MenuModule::renderStatusBar(RenderContext& ctx) {
     int16_t centerX = ctx.width() / 2;
     int16_t screenW = ctx.width();
 
-    // Get current time and date from RTC
-    uint32_t rtcTime = getValidTime(RTCQuality::RTCQualityDevice, true);
+    // Get current time and date from RTC (UTC epoch; localtime() applies TZ offset)
+    uint32_t rtcTime = getValidTime(RTCQuality::RTCQualityDevice, false);
     uint8_t hours = 0, minutes = 0;
     int year = 2024, month = 1, day = 1;
     if (rtcTime > 0) {

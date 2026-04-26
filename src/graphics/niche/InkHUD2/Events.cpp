@@ -200,8 +200,8 @@ int Events::onReceiveTextMessage(const meshtastic_MeshPacket* packet) {
     memcpy(msgText, text, copyLen);
     msgText[copyLen] = '\0';
 
-    // Get timestamp
-    uint32_t timestamp = getValidTime(RTCQuality::RTCQualityDevice, true);
+    // Get timestamp (UTC epoch; consumers apply TZ as needed)
+    uint32_t timestamp = getValidTime(RTCQuality::RTCQualityDevice, false);
 
     // Determine channel: DM if sent directly to us, otherwise use packet's channel
     uint8_t channel;

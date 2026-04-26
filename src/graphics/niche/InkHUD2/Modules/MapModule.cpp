@@ -634,7 +634,7 @@ void MapModule::renderPosition(RenderContext& ctx) {
     uint32_t posTime = localPosition.timestamp > 0 ? localPosition.timestamp : localPosition.time;
     char agoStr[16] = "unknown";
     if (posTime > 0) {
-        uint32_t now = getValidTime(RTCQuality::RTCQualityDevice, true);
+        uint32_t now = getValidTime(RTCQuality::RTCQualityDevice, false);
         if (now > posTime) {
             uint32_t elapsed = now - posTime;
             if (elapsed < 60) {
