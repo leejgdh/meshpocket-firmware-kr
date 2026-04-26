@@ -6,6 +6,7 @@
 #include "Core/Settings.h"
 #include "Modules/BatteryModule.h"
 #include "Modules/BootModule.h"
+#include "Modules/CannedMessageModule.h"
 #include "Modules/MenuModule.h"
 #include "Modules/MessageModule.h"
 #include "Modules/NodeListModule.h"
@@ -38,6 +39,7 @@ static MenuModule* menuModule = nullptr;
 static MessageModule* messageModule = nullptr;
 static NodeListModule* nodeListModule = nullptr;
 static MapModule* mapModule = nullptr;
+static CannedMessageModule* cannedMessageModule = nullptr;
 static Events* inkhud2Events = nullptr;
 
 // Menu state
@@ -111,6 +113,7 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
     messageModule = new MessageModule();
     nodeListModule = new NodeListModule();
     mapModule = new MapModule();
+    cannedMessageModule = new CannedMessageModule();
 
     // Set up menu actions
     actionPing = []() {
@@ -314,6 +317,7 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
     // Link modules
     nodeListModule->setMenuModule(menuModule);
     mapModule->setMenuModule(menuModule);
+    cannedMessageModule->setMenuModule(menuModule);
 
     // Configure message channels
     messageModule->addDMChannel();
@@ -330,6 +334,7 @@ void setup(NicheGraphics::Drivers::EInk* driver, const Config& config)
 
     hud.addModule(nodeListModule);
     hud.addModule(messageModule);
+    hud.addModule(cannedMessageModule);
     hud.addModule(mapModule);
 
     // Configure
