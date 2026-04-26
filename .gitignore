@@ -54,3 +54,6 @@ CMakeLists.txt
 
 # PYTHONPATH used by the Nix shell
 .python3
+
+# Claude Code local settings (per-user, should not be tracked)
+.claude/

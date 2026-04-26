@@ -1,3 +1,5 @@
+> **🇰🇷 한국어 사용자**: 이 fork는 Heltec MeshPocket에서 한글 메시지 표시를 지원합니다. 빌드/플래시/트레이드오프 안내는 [KOREAN.md](KOREAN.md) 참조.
+
 <div align="center" markdown="1">
 
 <img src=".github/meshtastic_logo.png" alt="Meshtastic Logo" width="80"/>
