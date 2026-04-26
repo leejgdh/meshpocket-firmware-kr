@@ -3,14 +3,15 @@
 * PVS-Studio Static Code Analyzer for C, C++, C#, and Java: https://pvs-studio.com
 */
 #include "ChatView.h"
+#include "../Core/Layout.h"
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
 
 namespace InkHUD2 {
 
-// Scale for elongated screens (~2px smaller than 18px base)
-constexpr float ELONGATED_BODY_SCALE = 0.89f;
+// Two-tier system: body for everything in a message bubble (info line
+// + message body). Header tier is reserved for the StatusBar above.
 
 ChatView::ChatView(Buffer* buffer, const Layout* layout, TextRenderer* text)
     : buffer(buffer), layout(layout), textRenderer(text), myNodeNum(0) {}
@@ -40,12 +41,7 @@ void ChatView::render(const ContentArea& area, const std::vector<ChatMessage>& m
     if (!buffer || !layout || !textRenderer || messages.empty()) return;
 
     uint16_t padding = layout->padding();
-    uint16_t lineH = layout->lineHeight();
-
-    // Detect elongated screen (aspect ratio > 1.5)
-    uint16_t maxDim = std::max(buffer->width(), buffer->height());
-    uint16_t minDim = std::min(buffer->width(), buffer->height());
-    bool isElongated = (minDim > 0) && (maxDim * 10 / minDim > 15);
+    uint16_t lineH = layout->bodyLineHeight();
 
     // Message area bounds
     constexpr uint16_t LINE_MARGIN = 2;
@@ -53,12 +49,10 @@ void ChatView::render(const ContentArea& area, const std::vector<ChatMessage>& m
     const int16_t msgR = area.innerRight(padding) - LINE_MARGIN;
     const uint16_t msgW = msgR - msgL;
 
-    // Scaled heights
-    uint8_t infoLineH = static_cast<uint8_t>(lineH * INFO_SCALE + 0.5f);
+    // Body and info both run at body tier; one-line height for either.
+    uint16_t infoLineH = lineH;
+    uint16_t bodyLineH = lineH;
     uint8_t infoPadding = lineH / 5;
-
-    // For elongated screens, body line height is scaled
-    uint16_t bodyLineH = isElongated ? static_cast<uint16_t>(lineH * ELONGATED_BODY_SCALE) : lineH;
 
     // Vertical cursor - start at bottom, move up
     int16_t cursorY = area.bottom();
@@ -108,10 +102,8 @@ void ChatView::render(const ContentArea& area, const std::vector<ChatMessage>& m
             snprintf(info, sizeof(info), "%s%s", senderName, metaBuf);
         }
 
-        // Calculate message height (scaled for elongated screens)
-        uint16_t bodyH = isElongated
-            ? textRenderer->getWrappedTextHeightScaled(msgW, msg.text, ELONGATED_BODY_SCALE)
-            : textRenderer->getWrappedTextHeight(msgW, msg.text);
+        // Wrapped body height (body tier).
+        uint16_t bodyH = textRenderer->getWrappedTextHeightScaled(msgW, msg.text, Layout::bodyScale);
         uint16_t totalMsgH = infoLineH + infoPadding + bodyH;
 
         // Available space - need room for info line + padding + at least one line of body
@@ -142,12 +134,12 @@ void ChatView::render(const ContentArea& area, const std::vector<ChatMessage>& m
             maxBodyH = static_cast<uint16_t>(bodySpace);
         }
 
-        // Draw info line
-        uint16_t infoW = textRenderer->textWidthScaled(info, INFO_SCALE);
+        // Draw info line (body tier).
+        uint16_t infoW = textRenderer->textWidthScaled(info, Layout::bodyScale);
         if (!outgoing) {
-            textRenderer->textScaled(msgL, infoY, info, INFO_SCALE, Align::LEFT, Color::BLACK);
+            textRenderer->textScaled(msgL, infoY, info, Layout::bodyScale, Align::LEFT, Color::BLACK);
         } else {
-            textRenderer->textScaled(msgR, infoY, info, INFO_SCALE, Align::RIGHT, Color::BLACK);
+            textRenderer->textScaled(msgR, infoY, info, Layout::bodyScale, Align::RIGHT, Color::BLACK);
         }
 
         // Dotted underline
@@ -164,37 +156,18 @@ void ChatView::render(const ContentArea& area, const std::vector<ChatMessage>& m
             buffer->setPixel(x, ulY, Color::BLACK);
         }
 
-        // Draw message body (scaled for elongated screens)
+        // Draw message body (body tier; outgoing right-aligned if it fits
+        // on a single line, otherwise wrap-left like inbound).
         if (truncated) {
-            if (isElongated) {
-                textRenderer->textWrappedTruncatedScaled(msgL, bodyY, msgW, maxBodyH, msg.text, ELONGATED_BODY_SCALE, Color::BLACK);
-            } else {
-                textRenderer->textWrappedTruncated(msgL, bodyY, msgW, maxBodyH, msg.text, Color::BLACK);
-            }
+            textRenderer->textWrappedTruncatedScaled(msgL, bodyY, msgW, maxBodyH, msg.text, Layout::bodyScale, Color::BLACK);
+        } else if (!outgoing) {
+            textRenderer->textWrappedScaled(msgL, bodyY, msgW, msg.text, Layout::bodyScale, Color::BLACK);
         } else {
-            if (!outgoing) {
-                if (isElongated) {
-                    textRenderer->textWrappedScaled(msgL, bodyY, msgW, msg.text, ELONGATED_BODY_SCALE, Color::BLACK);
-                } else {
-                    textRenderer->textWrapped(msgL, bodyY, msgW, msg.text, Color::BLACK);
-                }
+            uint16_t textW = textRenderer->textWidthScaled(msg.text, Layout::bodyScale);
+            if (textW < msgW) {
+                textRenderer->textScaled(msgR, bodyY, msg.text, Layout::bodyScale, Align::RIGHT, Color::BLACK);
             } else {
-                uint16_t textW = isElongated
-                    ? textRenderer->textWidthScaled(msg.text, ELONGATED_BODY_SCALE)
-                    : textRenderer->textWidth(msg.text);
-                if (textW < msgW) {
-                    if (isElongated) {
-                        textRenderer->textScaled(msgR, bodyY, msg.text, ELONGATED_BODY_SCALE, Align::RIGHT, Color::BLACK);
-                    } else {
-                        textRenderer->text(msgR, bodyY, msg.text, Align::RIGHT, Color::BLACK);
-                    }
-                } else {
-                    if (isElongated) {
-                        textRenderer->textWrappedScaled(msgL, bodyY, msgW, msg.text, ELONGATED_BODY_SCALE, Color::BLACK);
-                    } else {
-                        textRenderer->textWrapped(msgL, bodyY, msgW, msg.text, Color::BLACK);
-                    }
-                }
+                textRenderer->textWrappedScaled(msgL, bodyY, msgW, msg.text, Layout::bodyScale, Color::BLACK);
             }
         }
 

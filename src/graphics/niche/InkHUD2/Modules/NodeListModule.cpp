@@ -278,18 +278,12 @@ void NodeListModule::renderNodeList(RenderContext& ctx, const ContentArea& conte
     const Layout* layout = ctx.getLayout();
     if (!layout) return;
 
-    uint16_t lineH = layout->lineHeight();
-
-    // Detect elongated screen (aspect ratio > 1.5)
-    uint16_t maxDim = std::max(ctx.width(), ctx.height());
-    uint16_t minDim = std::min(ctx.width(), ctx.height());
-    bool isElongated = (minDim > 0) && (maxDim * 10 / minDim > 15);
-
-    // Card height depends on screen type
-    uint16_t shortLineH = isElongated ? layout->smallLineHeight() : lineH;
-    uint16_t longLineH = isElongated ? static_cast<uint16_t>(lineH * 0.67f) : layout->smallLineHeight();
-    uint16_t cardH = shortLineH + longLineH;
-    uint16_t cardMargin = layout->nodeCardMargin();
+    // Card = two body-tier lines. Both lines share the same scale so the
+    // pair reads as a single block. Section-spacing gap between cards keeps
+    // adjacent nodes from visually merging.
+    uint16_t rowLineH = layout->bodyLineHeight();
+    uint16_t cardH = rowLineH * 2;
+    uint16_t cardMargin = layout->sectionSpacing();
 
     int16_t y = content.top();
     auto sorted = sortedNodes();
@@ -314,19 +308,12 @@ void NodeListModule::renderNodeRow(RenderContext& ctx, const NodeEntry& node, in
     const Layout* layout = ctx.getLayout();
     if (!layout) return;
 
-    uint16_t lineH = layout->lineHeight();
-
-    // Use smaller fonts for elongated screens (aspect ratio > 1.5) to fit more content
-    uint16_t maxDim = std::max(ctx.width(), ctx.height());
-    uint16_t minDim = std::min(ctx.width(), ctx.height());
-    bool isElongated = (minDim > 0) && (maxDim * 10 / minDim > 15);
-
-    // For elongated: shortName uses smallScale, longName uses even smaller
-    // For square: shortName full size, longName uses smallScale
-    float shortNameScale = isElongated ? Layout::smallScale : 1.0f;
-    float longNameScale = isElongated ? 0.67f : Layout::smallScale;  // ~12px equivalent
-    uint16_t shortLineH = isElongated ? layout->smallLineHeight() : lineH;
-    uint16_t longLineH = static_cast<uint16_t>(lineH * longNameScale);
+    // Two-tier system: rows use body. Both lines share the scale.
+    float rowScale = Layout::bodyScale;
+    float shortNameScale = rowScale;
+    float longNameScale  = rowScale;
+    uint16_t shortLineH = layout->bodyLineHeight();
+    uint16_t longLineH  = shortLineH;
 
     Color textColor = Color::BLACK;
 
@@ -344,11 +331,9 @@ void NodeListModule::renderNodeRow(RenderContext& ctx, const NodeEntry& node, in
 
     // === Line A: Short name + [hops] + signal bars ===
     const char* shortName = (node.shortName[0] != '\0') ? node.shortName : "?";
-    if (isElongated) {
-        ctx.textScaled(nodeTextInset, lineAY, shortName, shortNameScale, Align::LEFT, textColor);
-    } else {
-        ctx.text(nodeTextInset, lineAY, shortName, Align::LEFT, textColor);
-    }
+    // Always draw scaled (no isElongated branch) so line A matches line B's
+    // tier exactly. ctx.text() defaults to body scale and would break parity.
+    ctx.textScaled(nodeTextInset, lineAY, shortName, shortNameScale, Align::LEFT, textColor);
 
     // Right side of Line A: [time] [signal bars OR "MQ"]
     // Hops moved out — they were cluttering the row and overlapping nearby
@@ -382,11 +367,7 @@ void NodeListModule::renderNodeRow(RenderContext& ctx, const NodeEntry& node, in
         std::string ts = formatLastHeard(node.lastHeard);
         if (!ts.empty()) {
             int16_t timeRightX = rightSlotLeftX - elemSpacing * 2;
-            if (isElongated) {
-                ctx.textScaled(timeRightX, lineAY, ts.c_str(), shortNameScale, Align::RIGHT, textColor);
-            } else {
-                ctx.text(timeRightX, lineAY, ts.c_str(), Align::RIGHT, textColor);
-            }
+            ctx.textScaled(timeRightX, lineAY, ts.c_str(), shortNameScale, Align::RIGHT, textColor);
         }
     }
 

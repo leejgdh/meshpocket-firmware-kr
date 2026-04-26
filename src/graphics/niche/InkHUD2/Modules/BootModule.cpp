@@ -167,9 +167,9 @@ void BootModule::renderPairing(RenderContext& ctx) {
     // Check if PIN should be hidden (user setting)
     bool hidePin = Settings::instance().getHidePIN();
 
-    // Scale down text for narrow screens
-    float headerScale = layout->isVertical() ? Layout::smallScale : 1.0f;
-    float textScale = layout->effectiveMenuScale();
+    // Two-tier system — pairing strings are body tier on every layout.
+    float headerScale = Layout::bodyScale;
+    float textScale = Layout::bodyScale;
 
     // "Bluetooth" header at Y=25%
     int16_t headerY = h * Layout::pairingHeaderY / 100;
@@ -196,8 +196,9 @@ void BootModule::renderPairing(RenderContext& ctx) {
             uint32_t last3 = pairingCode % 1000;
             snprintf(pinStr, sizeof(pinStr), "%03lu %03lu", (unsigned long)first3, (unsigned long)last3);
         }
-        // PIN code should be larger for readability
-        float pinScale = layout->isVertical() ? Layout::smallScale : 1.0f;
+        // PIN code body tier (two-tier system — no separate emphasized
+        // tier for PIN; body is already large enough on this display).
+        float pinScale = Layout::bodyScale;
         ctx.textScaled(centerX, pinY, pinStr, pinScale, Align::CENTER, Color::BLACK);
     }
 

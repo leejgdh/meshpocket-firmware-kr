@@ -583,7 +583,7 @@ void MenuModule::renderShutdown(RenderContext& ctx) {
 
     // "Shutting Down..." below logo - scale down for narrow screens
     int16_t textY = logoCY + logoH / 2 + layout->lineHeight();
-    float scale = layout->isVertical() ? Layout::smallScale : 1.0f;
+    float scale = Layout::bodyScale;
     ctx.textScaled(centerX, textY, "Shutting Down...", scale, Align::CENTER, Color::BLACK);
 }
 

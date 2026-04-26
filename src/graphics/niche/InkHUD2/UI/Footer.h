@@ -46,8 +46,8 @@ public:
         return layout ? layout->tabSize() : 8;
     }
 
-    // Scale factor for text
-    static constexpr float TEXT_SCALE = 0.78f;
+    // Footer text — body tier in the two-tier system.
+    static constexpr float TEXT_SCALE = Layout::bodyScale;
 
 private:
     void drawDottedLine(int16_t y);

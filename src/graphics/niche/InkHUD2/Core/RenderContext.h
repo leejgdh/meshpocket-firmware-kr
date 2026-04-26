@@ -90,24 +90,56 @@ public:
     void fillTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_t x2, int16_t y2, Color c = Color::BLACK);
 
     // === Text ===
+    //
+    // All text functions take an optional `scale` parameter as the last
+    // argument. Default = Layout::bodyScale (the design system's body
+    // tier). Pass Layout::headerScale (or another tier) for emphasis.
+    // Module code should rarely need anything other than body or header.
 
-    void text(int16_t x, int16_t y, const char* str, Align align = Align::LEFT, Color c = Color::BLACK);
+    void text(int16_t x, int16_t y, const char* str,
+              Align align = Align::LEFT, Color c = Color::BLACK,
+              float scale = Layout::bodyScale);
 
-    // Scaled text (scale 0.0-1.0, where 1.0 = normal size)
-    void textScaled(int16_t x, int16_t y, const char* str, float scale, Align align = Align::LEFT, Color c = Color::BLACK);
-
-    uint16_t textWidth(const char* str) const;
-    uint16_t textWidthScaled(const char* str, float scale) const;
+    uint16_t textWidth(const char* str, float scale = Layout::bodyScale) const;
 
     // Returns height used
-    uint16_t textWrapped(int16_t x, int16_t y, uint16_t maxW, const char* str, Color c = Color::BLACK);
+    uint16_t textWrapped(int16_t x, int16_t y, uint16_t maxW, const char* str,
+                         Color c = Color::BLACK, float scale = Layout::bodyScale);
 
     // Wrapped text with height limit - truncates with "..." if too long
     // Returns actual height used
-    uint16_t textWrappedTruncated(int16_t x, int16_t y, uint16_t maxW, uint16_t maxH, const char* str, Color c = Color::BLACK);
+    uint16_t textWrappedTruncated(int16_t x, int16_t y, uint16_t maxW, uint16_t maxH,
+                                  const char* str, Color c = Color::BLACK,
+                                  float scale = Layout::bodyScale);
 
     // Calculate wrapped text height without rendering
-    uint16_t getWrappedTextHeight(uint16_t maxW, const char* str) const;
+    uint16_t getWrappedTextHeight(uint16_t maxW, const char* str,
+                                  float scale = Layout::bodyScale) const;
+
+    // Legacy *Scaled wrappers — forward to the unified text() signatures.
+    // Prefer the no-suffix functions in new code; these will be removed.
+    inline void textScaled(int16_t x, int16_t y, const char* str, float scale,
+                           Align align = Align::LEFT, Color c = Color::BLACK) {
+        text(x, y, str, align, c, scale);
+    }
+    inline uint16_t textWidthScaled(const char* str, float scale) const {
+        return textWidth(str, scale);
+    }
+    inline uint16_t textWrappedScaled(int16_t x, int16_t y, uint16_t maxW,
+                                       const char* str, float scale,
+                                       Color c = Color::BLACK) {
+        return textWrapped(x, y, maxW, str, c, scale);
+    }
+    inline uint16_t textWrappedTruncatedScaled(int16_t x, int16_t y,
+                                                uint16_t maxW, uint16_t maxH,
+                                                const char* str, float scale,
+                                                Color c = Color::BLACK) {
+        return textWrappedTruncated(x, y, maxW, maxH, str, c, scale);
+    }
+    inline uint16_t getWrappedTextHeightScaled(uint16_t maxW, const char* str,
+                                                float scale) const {
+        return getWrappedTextHeight(maxW, str, scale);
+    }
 
     // === Standard UI elements ===
 

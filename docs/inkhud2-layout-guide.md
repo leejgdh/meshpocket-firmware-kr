@@ -50,7 +50,7 @@
   ```
 - 높이 = `lineHeight() + padding * 2` ≈ 22 px (250×122 기준).
 - 좌측 아이콘 + 제목, 우측 배터리 아이콘.
-- 제목 폰트 스케일 = `StatusBar::TITLE_SCALE = 0.78f` (= `Layout::smallScale`).
+- 제목 폰트 스케일 = `StatusBar::TITLE_SCALE` = `Layout::titleScale` (= 0.78f).
 
 ### 1.2 Body — `ContentArea`
 
@@ -72,20 +72,35 @@
 
 ---
 
-## 2. 현재 토큰 카탈로그 (Layout 클래스가 이미 제공하는 것)
+## 2. 토큰 카탈로그 — 의미 기반 토큰 시스템
 
-[`src/graphics/niche/InkHUD2/Core/Layout.h`](../src/graphics/niche/InkHUD2/Core/Layout.h) 이 디자인 시스템의 시작점인데, 만든 사람도 이걸 모듈에서 일관되게 사용하지 않았다.
+[`src/graphics/niche/InkHUD2/Core/Layout.h`](../src/graphics/niche/InkHUD2/Core/Layout.h) 가 디자인 시스템의 단일 소스. 모든 모듈은 의미 기반 alias 만 사용한다.
 
-### 2.1 폰트 스케일 (이미 정의됨)
+### 2.1 폰트 스케일 (의미 기반 토큰)
 
-| 상수 | 값 | 의미 / 사용 |
+| 토큰 | 값 | 의미 / 사용 |
 |---|---|---|
-| `Layout::smallScale` | **0.78f** | "small" 폰트. StatusBar TITLE, NodeList longName 등 |
-| `Layout::menuScale` | **0.89f** | 메뉴 항목 폰트 |
-| `Layout::hintScale` | **0.78f** | 힌트 텍스트 (= smallScale 와 동일값) |
-| `Layout::verticalScale` | **0.89f** | vertical mode 본문 폰트 |
-| (구현되지 않음, 필요) | **1.00f** | "body / regular" 기본 폰트 |
-| (구현되지 않음, 필요) | **0.67f** | "meta / caption" — NodeList longName 에 매직 넘버로 박혀있음 |
+| `Layout::bodyScale` | **1.00f** | 기본 본문 텍스트 (NodeList shortName, ChatView 본문, Boot pairing PIN 등) |
+| `Layout::bodyDenseScale` | **0.89f** | elongated 화면용 본문 압축 (ChatView elongated 본문) |
+| `Layout::titleScale` | **0.78f** | 헤더/StatusBar 제목, 보조 라벨 (NodeList row 시간 스탬프) |
+| `Layout::captionScale` | **0.78f** | 보조 텍스트 (NodeList longName-elongated, hint, ChatView info 라인) |
+| `Layout::metaScale` | **0.67f** | 가장 작은 메타 정보 (NodeList longName-elongated). 이보다 작게 쓰지 말 것 |
+| `Layout::menuItemScale` | **0.89f** | 메뉴 항목 (MenuModule list rows) |
+
+`titleScale = captionScale = 0.78f` 는 **현재 같은 값** 이지만 의미가 다르므로 분리 유지. 미래에 헤더/캡션 톤이 달라지면 둘 중 하나만 조정 가능.
+
+`bodyDenseScale = menuItemScale = 0.89f` 도 같은 이유 — 채팅 본문과 메뉴 항목이 우연히 같은 사이즈일 뿐, 한 쪽만 조정 가능해야 함.
+
+### 2.1.1 Legacy alias (backward compat)
+
+| Legacy | → 새 토큰 | 비고 |
+|---|---|---|
+| `Layout::smallScale` | `captionScale` | 기존 호출 사이트 다수 (MapModule labels, MenuModule, NodeListModule.h truncate default) |
+| `Layout::menuScale` | `menuItemScale` | |
+| `Layout::hintScale` | `captionScale` | |
+| `Layout::verticalScale` | `menuItemScale` | |
+
+⚠️ **결합 주의**: legacy alias 가 새 토큰을 가리키므로, `captionScale` 을 조정하면 모든 `smallScale` 호출 사이트도 같이 움직임. 의도하지 않으면 alias 를 자체 literal 로 분리.
 
 ### 2.2 라인 높이
 
@@ -117,30 +132,23 @@
 
 ---
 
-## 3. 매직 넘버 인벤토리 (현재 흩어져 있는 곳)
+## 3. 매직 넘버 인벤토리 — `feature/design-tokens` 에서 정리됨
 
-### NodeListModule.cpp
-```cpp
-float shortNameScale = isElongated ? Layout::smallScale : 1.0f;
-float longNameScale  = isElongated ? 0.67f             : Layout::smallScale;
-//                                    ^^^^^ 매직
-uint16_t longLineH = isElongated ? static_cast<uint16_t>(lineH * 0.67f)
-                                  : layout->smallLineHeight();
-//                                                   ^^^^^ 매직
-constexpr uint16_t LINE_MARGIN = 2;     // ChatView 의 LINE_MARGIN 과 같은 의미인지?
-```
+이전 상태:
 
-### ChatView.cpp
-```cpp
-constexpr float ELONGATED_BODY_SCALE = 0.89f;   // = menuScale 과 같은 값
-static constexpr float INFO_SCALE    = 0.78f;   // = smallScale 과 같은 값
-constexpr uint16_t LINE_MARGIN = 2;             // NodeList LINE_MARGIN 과 의도 같음
-```
+| 위치 | 매직 | 의미 |
+|---|---|---|
+| `NodeListModule.cpp` | `0.67f`, `1.0f`, `Layout::smallScale` | metaScale, bodyScale, captionScale |
+| `ChatView.cpp` | `ELONGATED_BODY_SCALE = 0.89f` | menuItemScale |
+| `ChatView.h` | `INFO_SCALE = 0.78f` | captionScale |
+| `StatusBar.h` | `TITLE_SCALE = 0.78f` | titleScale |
+| `BootModule.cpp` | `Layout::smallScale : 1.0f` | captionScale vs bodyScale |
+| `CannedMessageModule.cpp` | `Layout::smallScale : 1.0f` | captionScale vs bodyScale |
+| `DMView.{cpp,h}` | `ELONGATED_BODY_SCALE = 0.89f` (중복) | 파일 자체 dead → 삭제 |
 
-### StatusBar.h
-```cpp
-static constexpr float TITLE_SCALE = 0.78f;     // = smallScale 과 같은 값
-```
+정리 후: 모든 모듈이 `Layout::titleScale / bodyScale / captionScale / metaScale / menuItemScale` alias 또는 같은 값으로 정의된 `Layout::smallScale / menuScale` legacy alias 만 사용. 매직 float 0개.
+
+`LINE_MARGIN = 2` 같은 모듈 로컬 정수 상수는 의미상 `elementSpacing()` 헬퍼와 동등해 향후 정리 후보.
 
 ### 결론
 **이미 같은 값을 다른 이름으로 세 군데서 박아두고 있음**. 디자인 토큰 통합으로 한 곳에서 관리해야 함.
@@ -214,6 +222,17 @@ int16_t centerY = lineAY + (shortLineH - WIFI_H) / 2;
 
 현재 NodeListModule line A 가 그래도 한 Y 기준 (`lineAY`) 으로 텍스트/아이콘 모두 정렬해서 비교적 OK. ChatView 는 info 라인 / body 라인이 다른 lineHeight 를 사용해서 baseline 이 어긋날 가능성. **확인 후 baseline 정렬 헬퍼 도입 여부 결정**.
 
+### 4.4.1 우측 가장자리 마진 — raw 픽셀 vs 폰트 글리프
+
+E-Ink 우측 끝에 무언가를 그릴 때 마진 폭이 **무엇을 그리느냐에 따라 다름**:
+
+| 그리는 대상 | 권장 우측 마진 | 이유 |
+|---|---|---|
+| **Raw 픽셀 그래픽** (signal bars, Wi-Fi 아이콘 등 `fillRect`/`setPixel` 직접) | `nodeTextInset()` (또는 `padding()`) 만 | 픽셀 좌표가 정확. 작은 inset 으로 충분 |
+| **폰트 글리프** (`text()` / `textScaled()` RIGHT-align 호출) | `nodeTextInset() + elementSpacing()` 또는 그 이상 | 글자 마지막 pixel 이 advance position 너머로 돌출되어 클립됨 |
+
+NodeList 의 line A (signal/icon) 와 line B (distance text) 가 다른 마진을 쓰는 이유. 새 모듈도 같은 정책 적용.
+
 ### 4.5 폰트 스타일 (volumes)
 
 현재 InkHUD2 가 사용하는 폰트는 **`UnifiedFont18px` 한 종류**, 굵기 한 가지 (regular). Bold/Italic variant 없음.
@@ -277,9 +296,9 @@ Line B:  [longName ... metaScale]                                [N km metaScale
 - info 라인 (`Sender - 12:34 - 2H 5dB`) 과 본문이 시각적으로 구분
 - elongated 분기로 본문 폰트 살짝 작게
 
-**개선 필요**:
-- `INFO_SCALE = 0.78f` → `Layout::captionScale` 사용
-- `ELONGATED_BODY_SCALE = 0.89f` → `Layout::menuItemScale` 또는 새 토큰 (`bodyDenseScale`)
+**완료 / 개선 필요**:
+- ✅ `INFO_SCALE` → `Layout::captionScale` (alias)
+- ✅ `ELONGATED_BODY_SCALE` → `Layout::bodyDenseScale` (전용 토큰)
 - info 라인 baseline 과 본문 baseline 이 어긋날 가능성 (시각 검증 필요)
 
 ### 5.3 BootModule (PAIRING 등)
@@ -296,31 +315,29 @@ UX 룰과 안 맞아 빌드 제외 상태. 디자인 토큰 도입할 때 같이
 
 ---
 
-## 6. 마이그레이션 계획 (단계별)
+## 6. 마이그레이션 계획 (진행도)
 
-### 단계 1: 토큰 추가 (코드 수정 0)
-- `Layout.h` 에 `bodyScale`, `captionScale`, `metaScale`, `titleScale` 등 의미 기반 alias 추가 (값은 기존 매직 넘버 그대로 매핑).
-- 이미 있는 `smallScale` 은 alias 로 유지 (backward compat).
-- 추가 라인 높이 헬퍼 `metaLineHeight()` 등.
-- 새 모듈은 alias 사용 권장 — README/이 가이드에 명시.
+### ✅ 단계 1: 토큰 추가 — 완료
+- `Layout.h` 에 `bodyScale / bodyDenseScale / titleScale / captionScale / metaScale / menuItemScale` 추가
+- 라인 높이 헬퍼 `bodyLineHeight() / titleLineHeight() / captionLineHeight() / metaLineHeight() / menuItemLineHeight()` 추가
+- legacy `smallScale / menuScale / hintScale / verticalScale` 는 alias 유지 (값 같음)
 
-### 단계 2: 모듈 매직 넘버 → alias 교체
-- NodeListModule: `1.0f` → `bodyScale`, `Layout::smallScale` → `captionScale`, `0.67f` → `metaScale`.
-- ChatView: `INFO_SCALE` → 헬퍼 호출, `ELONGATED_BODY_SCALE` → 새 토큰.
-- StatusBar: `TITLE_SCALE` → `titleScale`.
+### ✅ 단계 2: 모듈 매직 넘버 → alias 교체 — 완료
+- NodeListModule, ChatView, StatusBar, Footer, BootModule, CannedMessageModule, MenuModule 모두 의미 기반 토큰 사용
+- DMView 삭제 (dead code, ChatView 가 흡수)
+- 변경 후 매직 float (font scale) 0개
 
-### 단계 3: 시각 회귀 검증
+### 단계 3: 시각 회귀 검증 — 진행 중
 - 각 모듈 화면 캡처 (또는 디바이스에서 직접 확인) — 폰트 사이즈 1px 차이도 e-ink 에서 보임.
-- baseline 어긋남 있으면 헬퍼 도입.
+- 값은 동일하게 보존되었으므로 시각 차이는 없어야 함.
+- baseline 어긋남 발견되면 헬퍼 도입.
 
-### 단계 4: 신규 모듈 작성 시 토큰만 사용
+### 단계 4: 신규 모듈 작성 시 토큰만 사용 (지속)
 - 매직 넘버 한 줄도 추가하지 않는 룰. PR review 시 강제.
 
-### 단계 5: 문서 업데이트
-- 이 가이드를 토큰 alias 추가 후 갱신.
-- README 에 "디자인 가이드는 docs/inkhud2-layout-guide.md 참조" 링크 추가.
-
-**예상 작업량**: 단계 1–2 = 반나절, 단계 3 = 시각 검증 시간 별도, 단계 4–5 = 지속.
+### 단계 5: 문서 업데이트 — 완료
+- 이 가이드를 alias 추가 후 갱신
+- docs/README.md 인덱스에 가이드 등록
 
 ---
 
@@ -342,10 +359,12 @@ UX 룰과 안 맞아 빌드 제외 상태. 디자인 토큰 도입할 때 같이
 
 ## 부록 — 현재 코드 베이스 레퍼런스 표
 
-| 토큰 의미 | 현재 위치 | 사용처 |
+| 값 | 토큰 | 사용처 |
 |---|---|---|
-| 0.78f (TITLE / SMALL / INFO) | Layout::smallScale | StatusBar TITLE_SCALE, ChatView INFO_SCALE, NodeList longName(elongated 아님), MessageModule 등 |
-| 0.89f (MENU / DENSE BODY) | Layout::menuScale, Layout::verticalScale | MenuModule, ChatView ELONGATED_BODY_SCALE |
-| 0.67f (META) | NodeList 매직 | NodeList longName(elongated 모드), longLineH |
-| 1.00f (BODY) | 매직 (기본 lineHeight) | NodeList shortName, ChatView 본문(square) |
+| **1.00f** | `Layout::bodyScale` | NodeList shortName(square), ChatView 본문(square), Boot pairing PIN(landscape), MenuModule shutdown text(landscape) |
+| **0.89f** | `Layout::bodyDenseScale` | ChatView 본문(elongated) |
+| **0.89f** | `Layout::menuItemScale` (≡ legacy `menuScale`/`verticalScale`) | MenuModule list rows |
+| **0.78f** | `Layout::titleScale` | StatusBar TITLE_SCALE |
+| **0.78f** | `Layout::captionScale` (≡ legacy `smallScale`/`hintScale`) | NodeList longName(elongated), NodeList row time, ChatView INFO_SCALE, Footer TEXT_SCALE, Boot pairing header(vertical), CannedMessage(elongated)+hint, MapModule labels |
+| **0.67f** | `Layout::metaScale` | NodeList longName line height(elongated) |
 

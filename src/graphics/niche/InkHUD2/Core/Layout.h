@@ -28,12 +28,59 @@ public:
     static constexpr uint16_t MIN_DIMENSION = 100;  // Below this, don't scale down further
 
     // ========================================================================
-    // Font Scales (relative to base font size)
+    // Font Scales — meaning-based design tokens.
+    //
+    // Modules MUST use these aliases instead of magic literals (0.78f /
+    // 0.89f / 0.67f / 1.0f). New tokens go here, not in module-local
+    // constants. See docs/inkhud2-layout-guide.md.
+    //
+    // Usage map:
+    //   bodyScale     — primary readable text (NodeList shortName, ChatView
+    //                   message body on square screens, BootModule pin on
+    //                   landscape, etc.)
+    //   titleScale    — header/status-bar titles, minor labels alongside
+    //                   primary content (NodeList row time stamp).
+    //   captionScale  — secondary text (NodeList longName on elongated, hint
+    //                   strings, ChatView info line).
+    //   metaScale     — finest meta info (NodeList longName on elongated,
+    //                   smallest labels). Don't use below this size.
+    //   menuItemScale — list rows in MenuModule and the dense body in
+    //                   ChatView's elongated mode.
     // ========================================================================
-    static constexpr float smallScale = 0.78f;   // ~14px on 200x200
-    static constexpr float menuScale = 0.89f;    // ~16px on 200x200
-    static constexpr float hintScale = 0.78f;    // ~14px on 200x200
-    static constexpr float verticalScale = 0.89f; // ~16px - smaller font for vertical mode
+    // Two-tier system: every textual element is either body or header.
+    // Modules pick one of the two; nothing else.
+    //
+    //   bodyScale   — all primary content. NodeList rows, MenuModule items,
+    //                 ChatView messages (info + body), BootModule pairing
+    //                 strings, hints. The "regular" tier.
+    //   headerScale — ONLY for top-of-screen headers (StatusBar title).
+    //                 Slightly larger than body so the header reads as a
+    //                 distinct band. Don't reuse for inline emphasis.
+    static constexpr float bodyScale   = 0.67f;
+    static constexpr float headerScale = 0.78f;
+
+    // ----- Legacy meaning-tokens, kept for source compatibility but now -----
+    // ----- collapse to one of the two tiers above. Don't add new uses.   -----
+    static constexpr float bodyDenseScale = bodyScale;
+    static constexpr float titleScale     = headerScale;
+    static constexpr float captionScale   = bodyScale;
+    static constexpr float metaScale      = bodyScale;
+    static constexpr float menuItemScale  = bodyScale;
+
+    // Legacy names — kept as aliases so we don't have to touch every call
+    // site in one go. Prefer the meaning-based names above for new code.
+    //
+    // ⚠️ COUPLING WARNING:
+    // Retuning a meaning-based token (e.g. tightening captionScale to
+    // 0.75f) silently moves every legacy-aliased call site too —
+    // including pixel-sensitive paths in MapModule labels, MenuModule,
+    // and others. If you change a base token, sweep BOTH the new-name
+    // and legacy-name call sites, or split these aliases into their own
+    // literals to break the coupling intentionally.
+    static constexpr float smallScale    = captionScale;
+    static constexpr float menuScale     = menuItemScale;
+    static constexpr float hintScale     = captionScale;
+    static constexpr float verticalScale = menuItemScale;
 
     // ========================================================================
     // Base values (for REFERENCE_SIZE, scaled dynamically)
@@ -117,6 +164,21 @@ public:
         return scaled(18, 12);  // Fallback: 18px ref, min 12px
     }
 
+    // Two-tier line heights matching the two scales.
+    uint16_t bodyLineHeight()   const {
+        return static_cast<uint16_t>(lineHeight() * bodyScale);
+    }
+    uint16_t headerLineHeight() const {
+        return static_cast<uint16_t>(lineHeight() * headerScale);
+    }
+
+    // Legacy aliases — collapse to body tier. Don't add new uses.
+    uint16_t titleLineHeight()    const { return headerLineHeight(); }
+    uint16_t captionLineHeight()  const { return bodyLineHeight(); }
+    uint16_t metaLineHeight()     const { return bodyLineHeight(); }
+    uint16_t menuItemLineHeight() const { return bodyLineHeight(); }
+
+    // Legacy aliases.
     uint16_t smallLineHeight() const {
         return static_cast<uint16_t>(lineHeight() * smallScale);
     }
