@@ -496,6 +496,171 @@ LoRa 수신
 
 ---
 
+## J. 하드웨어 연결 체크 및 컨트롤
+
+본 섹션은 **MeshPocket nRF52840 + SX1262 + 2.13" E-Ink** 기준. 다른 V3 보드는 변형 가능.
+
+### I2C 자동 감지 → 모듈 활성화
+
+[main.cpp:525-543](src/main.cpp#L525)에서 `ScanI2CTwoWire::scanPort()`로 0x08~0x77 주소 순회. 응답 있으면 레지스터 ID 읽어 칩 식별. 결과는 `screen_found`, `pmu_found`, `accelerometer_found` 등 전역 변수에 저장.
+
+| 칩 | I2C 주소 | 활성 모듈 |
+|---|---|---|
+| **SSD1306 / SH1106** (OLED) | 0x3C, 0x3D | Screen (레거시 UI) |
+| **BME280 / BME680** (환경센서) | 0x76, 0x77 | EnvironmentTelemetry |
+| **BMA423** (가속도계) | 0x18 | AccelerometerThread |
+| **LIS3DH** | 0x18, 0x19 | AccelerometerThread |
+| **MPU6050 / LSM6DS3 / BMX160 / ICM20948** | 0x68, 0x69, 0x6A, 0x6B | IMU 기반 모듈 |
+| **AXP192 / AXP2101** (PMU) | 0x34 | Power (배터리/충전 PMU) |
+| **RV3028** (RTC) | 0x52 | TimeModule (시간 동기화) |
+| **INA260 / INA226** (전력계) | 0x40, 0x41 | PowerTelemetry |
+| **SEN5X** (공기질) | 0x69 | AirQualityTelemetry |
+
+코드 위치: [ScanI2CTwoWire.cpp:184-741](src/detect/ScanI2CTwoWire.cpp#L184)
+
+**MeshPocket의 경우** — variant.h는 GPS·OLED 없이 E-Ink + SX1262 + nRF52840 내장 ADC만 사용. 외부 I2C 센서는 사용자가 임의로 추가하지 않는 한 거의 감지될 게 없음.
+
+### 배터리 모니터링
+
+#### MeshPocket variant 정의 ([variant.h:121-125](variants/nrf52840/heltec_mesh_pocket/variant.h#L121))
+
+```c
+#if defined(HELTEC_MESH_POCKET_BATTERY_5000)
+#define OCV_ARRAY 4300, 4240, 4120, 4000, 3888, 3800, 3740, 3698, 3655, 3580, 3400
+#elif defined(HELTEC_MESH_POCKET_BATTERY_10000)
+#define OCV_ARRAY 4100, 4060, 3960, 3840, 3729, 3625, 3550, 3500, 3420, 3345, 3100
+#endif
+
+#define BATTERY_PIN 29              // ADC 핀
+#define ADC_RESOLUTION 14
+#define ADC_MULTIPLIER (4.6425F)    // 분압 회로 보상
+#define AREF_VOLTAGE 3.0
+```
+
+#### % 변환 알고리즘 ([Power.cpp:264-276](src/Power.cpp#L264))
+
+```
+1. ADC 15회 평균 → raw
+2. scaled = ADC_MULTIPLIER × (1000 × AREF_VOLTAGE / 2^14) × raw
+3. 저역 필터: last += (scaled - last) × 0.5  (잡음 제거)
+4. OCV 테이블 보간 → 0~100%
+```
+
+OCV (Open Circuit Voltage) 테이블은 셀 전압별 SOC(State of Charge)를 11개 점으로 mapping. 5000 vs 10000mAh의 차이는 **OCV 곡선 모양만 다름** (배터리 화학 특성 반영).
+
+#### 충전 감지 — nRF52840 내부 VBUS detector ([main-nrf52.cpp:70-72](src/platform/nrf52/main-nrf52.cpp#L70))
+
+```c
+bool powerHAL_isVBUSConnected() {
+    return NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk;
+}
+```
+
+VBUS 전압이 잡히면 충전 중 판단. MeshPocket 포고핀 = 충전 라인이라 케이블 연결 시 VBUS HIGH.
+
+#### 임계값 ([StatusLEDModule.cpp:32-35](src/modules/StatusLEDModule.cpp#L32))
+
+| 상태 | 트리거 |
+|---|---|
+| `discharging` | VBUS 없음, % > 5% |
+| `charging` | VBUS 있음, % < 100% |
+| `charged` | VBUS 있음, % ≥ 100% |
+| `critical` | % ≤ 5% |
+
+### LoRa 라디오 health
+
+**카운터 메트릭** ([RadioLibInterface.h:123](src/mesh/RadioLibInterface.h#L123)):
+
+| 메트릭 | 의미 |
+|---|---|
+| `rxGood` | CRC OK 수신 패킷 수 |
+| `rxBad` | CRC 오류 / decode 실패 |
+| `txGood` | 송신 성공 |
+| `txRelay` | 중계한 패킷 수 |
+
+DeviceTelemetry가 이걸 묶어 `airUtilTx`, `numPacketsRx` 등으로 앱에 보고.
+
+**SX126x init** ([SX126xInterface.cpp:36-211](src/mesh/SX126xInterface.cpp#L36)):
+1. DIO 핀 설정 ([variant.h:58-70](variants/nrf52840/heltec_mesh_pocket/variant.h#L58)) — `SX126X_CS=26, BUSY=15, RESET=12, DIO1=16`
+2. `lora.begin(freq, bw, sf, cr, syncWord, power, preamble, tcxo, regulator)`
+3. **OCP (Over Current Protection) 140mA**
+4. DIO2 = RF 스위치 (TX/RX 경로 전환)
+5. RX gain mode (boosted vs power-saving)
+
+**죽음 감지**:
+- TX/RX timeout (ISR 안 옴)
+- 연속 RX bad 누적
+- airTime 추적으로 송신 지연 감지
+- CAD (Channel Activity Detection)로 송신 전 채널 점검 ([RadioLibInterface.h:148](src/mesh/RadioLibInterface.h#L148))
+
+### 가속도계 (옵션)
+
+MeshPocket variant.h엔 가속도계 없음 (`HAS_GPS 0`처럼 명시는 안 됐지만 ScanI2C 결과로 결정). 다른 V3 보드(예: Heltec Wireless Tracker)는 BMA423 등 탑재.
+
+**감지되면 AccelerometerThread 활성** ([motion/AccelerometerThread.h:47-50](src/motion/AccelerometerThread.h#L47)):
+- `wakeScreen()` — 흔들림 감지 시 화면 ON 트리거
+- `buttonPress()` — 더블탭으로 버튼 입력 에뮬레이션
+- 폴링 100ms, 탭 임계 40 단위 ([motion/MotionSensor.h](src/motion/MotionSensor.h))
+
+### E-Ink 디스플레이
+
+MeshPocket 핀 ([variant.h:73-82](variants/nrf52840/heltec_mesh_pocket/variant.h#L73)):
+```c
+#define PIN_EINK_CS    24
+#define PIN_EINK_BUSY  (32+6)   // = 38
+#define PIN_EINK_DC    31
+#define PIN_EINK_RES   (32+4)   // = 36
+#define PIN_EINK_SCLK  22
+#define PIN_EINK_MOSI  20
+```
+
+**Health check** = BUSY 핀이 release 되는지 확인 (timeout 10초). InkHUD2의 `EInkAdapter::busy()`가 매 update 전 체크.
+
+### LED 제어
+
+MeshPocket variant.h ([line 25-29](variants/nrf52840/heltec_mesh_pocket/variant.h#L25)):
+```c
+#define PIN_LED1     13     // 빨강 단색 LED
+#define LED_STATE_ON 0      // Active Low
+```
+
+**StatusLED 패턴** ([StatusLEDModule.cpp](src/modules/StatusLEDModule.cpp)):
+
+| 상태 | 패턴 |
+|---|---|
+| Discharging | 1ms ON / 999ms OFF (희미하게 한번씩) |
+| Charging | 1초 토글 |
+| Charged | 점등 (지속 ON) |
+| Critical (≤5%) | 250ms 빠른 깜빡임, 2초 동안 |
+| BLE unpaired | 2초 주기 느린 깜빡임 |
+| BLE pairing | 1초 주기 깜빡임 |
+| BLE connected | 점등 |
+
+**RGB LED**가 있는 보드 (`#ifdef RGB_LED_POWER`)는 별도 `AmbientLightingThread`가 처리.
+
+### USB / DFU 메커니즘
+
+**MeshPocket의 USB-C 포트는 충전 전용** — 데이터 라인 비연결. 펌웨어 업데이트는 두 경로:
+
+1. **포고핀 + DFU mode** (BSP의 Adafruit Bootloader)
+   - RST 버튼 더블클릭 → Bootloader가 부트 매직 감지 → DFU 모드 진입
+   - PC에 `HT-n5262` USB Mass Storage 드라이브로 마운트
+   - .uf2 파일 드래그 → Bootloader가 flash에 write → 자동 재부팅
+   - 이 동작은 **펌웨어 측 코드가 아니라 부트로더가 처리** ([Adafruit nRF52 BSP](https://github.com/adafruit/Adafruit_nRF52_Bootloader))
+2. **BLE DFU** (S140 SoftDevice 기반)
+   - [src/platform/nrf52/BLEDfuSecure.h:44-52](src/platform/nrf52/BLEDfuSecure.h#L44) — Secure DFU GATT service
+   - 앱이 BLE로 새 펌웨어 binary 전송 → bootloader가 처리
+   - 매직값 `DFU_MAGIC_SKIP = 0x6d` ([main-nrf52.cpp:459-461](src/platform/nrf52/main-nrf52.cpp#L459))
+
+**Serial 사용** — MeshPocket에선 USB serial 안 됨 (USB-C 데이터 비연결). J-Link 같은 외부 디버거로만 가능.
+
+### 미확인 ([확인 필요])
+- E-Ink BUSY timeout 정확한 값 (코드 상수)
+- 충전 IC chip — MeshPocket이 외부 PMU 쓰는지 nRF52840 내장 USB regulator만 쓰는지
+- AccelerometerThread가 deep sleep wake 트리거에 정말 사용되는지 (PowerFSM과의 연결)
+
+---
+
 ## 참고
 
 - 폴더 구조 분석은 [KOREAN.md](KOREAN.md) 참조
