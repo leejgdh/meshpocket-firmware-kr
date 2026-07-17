@@ -474,11 +474,34 @@ void InkHUD::Applet::drawMixed(const std::string &text)
 // AppletFont (fontSmall/fontMedium/fontLarge all share the one Korean bitmap font, at different sizes).
 // Without this, Hangul would always render at a fixed size regardless of which font is selected,
 // looking mismatched against small or large Latin text drawn alongside it.
+//
+// Reference height comes from a specific glyph ('0'), not AppletFont::lineHeight(): lineHeight() is the
+// tallest glyph across the *entire* font (accented capitals, brackets, etc.), which is a taller outlier
+// than ordinary digits/letters actually look. Scaling to that outlier made Hangul render oversized
+// (e.g. fontLarge's lineHeight of 23px vs a '0' that's actually only 17px tall) - visibly thicker/blockier
+// than intended, since it's a nearest-neighbor resize of an already-1bpp bitmap.
 float InkHUD::Applet::cjkScale()
 {
     if (!cjkFont || cjkFont->height == 0)
         return 1.0f;
-    return static_cast<float>(currentFont.lineHeight()) / cjkFont->height;
+
+    float scale = 1.0f;
+    const GFXfont *f = currentFont.gfxFont;
+    constexpr uint8_t referenceChar = '0';
+    if (f && referenceChar >= f->first && referenceChar <= f->last) {
+        uint8_t refHeight = f->glyph[referenceChar - f->first].height;
+        if (refHeight > 0)
+            scale = static_cast<float>(refHeight) / cjkFont->height;
+        else
+            scale = static_cast<float>(currentFont.lineHeight()) / cjkFont->height; // Fallback: no '0' glyph
+    } else {
+        scale = static_cast<float>(currentFont.lineHeight()) / cjkFont->height; // Fallback: no gfxFont at all
+    }
+
+    // Never shrink below cjkFont's own native size: it's already sized deliberately small
+    // (see nicheGraphics.h), and legibility on-device matters more than exact size-matching
+    // against whatever AppletFont happens to be active (e.g. fontSmall).
+    return scale < 1.0f ? 1.0f : scale;
 }
 
 // Unpack and blit one glyph from Applet::cjkFont at the current cursor, scaled to suit the current AppletFont
@@ -499,7 +522,10 @@ void InkHUD::Applet::drawCJKGlyph(int16_t glyphIndex)
         dstH = 1;
 
     int16_t gx = getCursorX();
-    int16_t gy = getCursorY() + static_cast<int16_t>(cjkFont->yOffset * scale); // yOffset is negative (above baseline)
+    // Bottom-align the scaled glyph to the cursor's baseline exactly, rather than independently rounding
+    // yOffset*scale and height*scale (which can disagree by a px depending on scale, drifting the baseline).
+    // Valid because this font's glyphs sit fully above the baseline with no descender (yOffset == -height).
+    int16_t gy = getCursorY() - dstH;
 
     for (uint8_t dy = 0; dy < dstH; dy++) {
         uint8_t sy = static_cast<uint8_t>(dy / scale);

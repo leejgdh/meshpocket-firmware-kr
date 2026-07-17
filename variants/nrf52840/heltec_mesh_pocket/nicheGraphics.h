@@ -24,8 +24,12 @@
 
 // Korean bitmap font
 // Secondary font for codepoints an 8-bit AppletFont can't represent (Hangul, CJK punctuation, fullwidth forms).
-// Ported from kuroanji/InkHUD2's font_generator output; see src/graphics/niche/Fonts/CJK/KoreanFont18px.h
-#include "graphics/niche/Fonts/CJK/KoreanFont18px.h"
+// Native 12px, generated directly from Noto Sans KR (not scaled down from an 18px source - that produced a
+// visibly thicker/blockier result). Sized a bit above fontSmall's reference glyph height (9px) on purpose -
+// Applet::cjkScale() has a 1.0 floor, so fontSmall never shrinks it below this native size; 9px native read
+// as too small to comfortably read on-device. No bundled Latin/ASCII glyphs either, since those go unused -
+// legacy InkHUD already renders ASCII via its own GFXfont. See src/graphics/niche/Fonts/CJK/KoreanFont12px.h
+#include "graphics/niche/Fonts/CJK/KoreanFont12px.h"
 
 void setupNicheGraphics()
 {
@@ -61,7 +65,7 @@ void setupNicheGraphics()
     InkHUD::Applet::fontSmall = FREESANS_6PT_WIN1253;
 
     // Secondary font: Hangul / CJK bitmap glyphs, used automatically alongside whichever font above is active
-    InkHUD::Applet::cjkFont = &NicheGraphics::KoreanFont18px;
+    InkHUD::Applet::cjkFont = &NicheGraphics::KoreanFont12px;
 
     // Customize default settings
     inkhud->persistence->settings.userTiles.maxCount = 2; // How many tiles can the display handle?
