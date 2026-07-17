@@ -22,6 +22,11 @@
 #include "graphics/niche/Drivers/EInk/LCMEN2R13ECC1.h"
 #include "graphics/niche/Inputs/TwoButton.h"
 
+// Korean bitmap font
+// Secondary font for codepoints an 8-bit AppletFont can't represent (Hangul, CJK punctuation, fullwidth forms).
+// Ported from kuroanji/InkHUD2's font_generator output; see src/graphics/niche/Fonts/CJK/KoreanFont18px.h
+#include "graphics/niche/Fonts/CJK/KoreanFont18px.h"
+
 void setupNicheGraphics()
 {
     using namespace NicheGraphics;
@@ -54,6 +59,9 @@ void setupNicheGraphics()
     InkHUD::Applet::fontLarge = FREESANS_12PT_WIN1253;
     InkHUD::Applet::fontMedium = FREESANS_9PT_WIN1253;
     InkHUD::Applet::fontSmall = FREESANS_6PT_WIN1253;
+
+    // Secondary font: Hangul / CJK bitmap glyphs, used automatically alongside whichever font above is active
+    InkHUD::Applet::cjkFont = &NicheGraphics::KoreanFont18px;
 
     // Customize default settings
     inkhud->persistence->settings.userTiles.maxCount = 2; // How many tiles can the display handle?

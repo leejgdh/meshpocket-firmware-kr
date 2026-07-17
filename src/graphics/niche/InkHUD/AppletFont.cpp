@@ -130,6 +130,14 @@ uint32_t InkHUD::AppletFont::toUtf32(const std::string &utf8)
     return utf32;
 }
 
+// Re-encode a single, already-isolated UTF-8 character (one codepoint's worth of bytes) to extended ASCII
+// Thin wrapper around decodeUTF8, which is the well-tested implementation of the actual remapping
+char InkHUD::AppletFont::encodeCodepoint(const std::string &utf8Char)
+{
+    std::string result = decodeUTF8(utf8Char);
+    return result.empty() ? '\x1A' : result.at(0);
+}
+
 // Process a string, collating UTF-8 bytes, and sending them off for re-encoding to extended ASCII
 // Not all InkHUD text is passed through here, only text which could potentially contain non-ASCII chars
 std::string InkHUD::AppletFont::decodeUTF8(const std::string &encoded)

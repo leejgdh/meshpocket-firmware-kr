@@ -24,6 +24,7 @@
 #include "./Persistence.h"
 #include "./Tile.h"
 #include "graphics/niche/Drivers/EInk/EInk.h"
+#include "graphics/niche/Fonts/CJK/CJKFont.h"
 
 namespace NicheGraphics::InkHUD
 {
@@ -123,6 +124,10 @@ class Applet : public GFX
 
     static AppletFont fontSmall, fontMedium, fontLarge; // The general purpose fonts, used by all applets
 
+    // Optional secondary bitmap font, for scripts an 8-bit AppletFont can't represent (e.g. Hangul).
+    // Used automatically by printAt / printWrapped whenever non-ASCII text is printed. Set in nicheGraphics.h.
+    static const NicheGraphics::CJKFont *cjkFont;
+
     const char *name = nullptr; // Shown in applet selection menu. Also used as an identifier by InkHUD::getSystemApplet
 
   protected:
@@ -148,6 +153,7 @@ class Applet : public GFX
 
     void setFont(AppletFont f);
     AppletFont getFont();
+    void setTextColor(uint16_t color); // Shadows GFX::setTextColor. Also remembers the color, for drawing CJK glyphs.
     uint16_t getTextWidth(const std::string &text);
     uint16_t getTextWidth(const char *text);
     uint32_t getWrappedTextHeight(int16_t left, uint16_t width, const std::string &text); // Result of printWrapped
@@ -176,7 +182,14 @@ class Applet : public GFX
     std::string localizeDistance(uint32_t meters);             // Human readable distance, imperial or metric
     std::string parse(const std::string &text);                // Handle text which might contain special chars
     std::string parseShortName(meshtastic_NodeInfoLite *node); // Get the shortname, or a substitute if has unprintable chars
-    bool isPrintable(const std::string &text);                 // Check for characters which the font can't print
+    bool isPrintable(const std::string &text);                 // Check for characters which neither the font nor cjkFont can print
+
+    // Mixed-script text (ASCII/WIN125x glyphs from the current AppletFont, plus Hangul/CJK bitmap glyphs from
+    // Applet::cjkFont), used by printAt/printWrapped whenever a string contains non-ASCII bytes.
+    uint16_t measureMixed(const std::string &text);   // Width in px, without drawing anything or moving the cursor
+    void drawMixed(const std::string &text);          // Draws at the current cursor. Advances the cursor.
+    void drawCJKGlyph(int16_t glyphIndex);             // Unpacks and blits one glyph from cjkFont. Advances the cursor.
+    float cjkScale(); // How much to scale cjkFont's fixed-size glyphs, to match the currently active AppletFont's size
 
     // Convenient references
 
@@ -198,7 +211,8 @@ class Applet : public GFX
     using GFX::setFont;     // Make sure derived classes use AppletFont instead of AdafruitGFX fonts directly
     using GFX::setRotation; // Block setRotation calls. Rotation is handled globally by WindowManager.
 
-    AppletFont currentFont; // As passed to setFont
+    AppletFont currentFont;   // As passed to setFont
+    uint16_t textColor = BLACK; // As passed to setTextColor. Tracked locally since GFX doesn't expose a getter; used by drawCJKGlyph.
 
     // As set by setCrop
     int16_t cropLeft = 0;

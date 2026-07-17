@@ -13,7 +13,44 @@ using namespace NicheGraphics;
 InkHUD::AppletFont InkHUD::Applet::fontLarge; // General purpose fonts. Set in nicheGraphics.h
 InkHUD::AppletFont InkHUD::Applet::fontMedium;
 InkHUD::AppletFont InkHUD::Applet::fontSmall;
+const NicheGraphics::CJKFont *InkHUD::Applet::cjkFont = nullptr; // Secondary bitmap font (e.g. Hangul). Set in nicheGraphics.h
 constexpr float InkHUD::Applet::LOGO_ASPECT_RATIO; // Ratio of the Meshtastic logo
+
+namespace
+{
+// Decode the UTF-8 character beginning at text[i], advance i past it, and report the raw bytes consumed
+// (the raw bytes are needed to fall back to AppletFont::encodeCodepoint, which re-implements this same decoding)
+uint32_t stepUtf8(const std::string &text, size_t &i, std::string &raw)
+{
+    uint8_t first = static_cast<uint8_t>(text[i]);
+    size_t len = 1;
+    uint32_t codepoint = first;
+
+    if ((first & 0x80) == 0x00) {
+        len = 1;
+        codepoint = first;
+    } else if ((first & 0xE0) == 0xC0) {
+        len = 2;
+        codepoint = first & 0x1F;
+    } else if ((first & 0xF0) == 0xE0) {
+        len = 3;
+        codepoint = first & 0x0F;
+    } else if ((first & 0xF8) == 0xF0) {
+        len = 4;
+        codepoint = first & 0x07;
+    }
+
+    if (len > text.length() - i) // Don't overrun a truncated sequence at the end of the string
+        len = text.length() - i;
+
+    for (size_t k = 1; k < len; k++)
+        codepoint = (codepoint << 6) | (static_cast<uint8_t>(text[i + k]) & 0x3F);
+
+    raw = text.substr(i, len);
+    i += len;
+    return codepoint;
+}
+} // namespace
 
 InkHUD::Applet::Applet() : GFX(0, 0)
 {
@@ -288,24 +325,51 @@ uint16_t InkHUD::Applet::Y(float f)
 // Print text, specifying the position of any edge / corner of the textbox
 void InkHUD::Applet::printAt(int16_t x, int16_t y, const char *text, HorizontalAlignment ha, VerticalAlignment va)
 {
-    // We do still have to run getTextBounds to find the width
-    int16_t textOffsetX, textOffsetY;
-    uint16_t textWidth, textHeight;
-    getTextBounds(text, 0, 0, &textOffsetX, &textOffsetY, &textWidth, &textHeight);
+    // Text containing only ASCII bytes takes the original AdafruitGFX path, unchanged.
+    // Anything else (WIN125x-remappable accents, emoji, or Hangul/CJK) is measured/drawn via the mixed-script
+    // path, which additionally consults Applet::cjkFont. This keeps existing single-byte alignment
+    // (getTextBounds' textOffsetX) exact for the common case, and confines the new code to non-ASCII text.
+    bool plainAscii = true;
+    for (const char *p = text; *p; p++) {
+        if (static_cast<uint8_t>(*p) >= 0x80) {
+            plainAscii = false;
+            break;
+        }
+    }
 
     int16_t cursorX = 0;
     int16_t cursorY = 0;
 
-    switch (ha) {
-    case LEFT:
-        cursorX = x - textOffsetX;
-        break;
-    case CENTER:
-        cursorX = (x - textOffsetX) - (textWidth / 2);
-        break;
-    case RIGHT:
-        cursorX = (x - textOffsetX) - textWidth;
-        break;
+    if (plainAscii) {
+        int16_t textOffsetX, textOffsetY;
+        uint16_t textWidth, textHeight;
+        getTextBounds(text, 0, 0, &textOffsetX, &textOffsetY, &textWidth, &textHeight);
+
+        switch (ha) {
+        case LEFT:
+            cursorX = x - textOffsetX;
+            break;
+        case CENTER:
+            cursorX = (x - textOffsetX) - (textWidth / 2);
+            break;
+        case RIGHT:
+            cursorX = (x - textOffsetX) - textWidth;
+            break;
+        }
+    } else {
+        uint16_t textWidth = measureMixed(text);
+
+        switch (ha) {
+        case LEFT:
+            cursorX = x;
+            break;
+        case CENTER:
+            cursorX = x - (textWidth / 2);
+            break;
+        case RIGHT:
+            cursorX = x - textWidth;
+            break;
+        }
     }
 
     // We're using a fixed line height, rather than sizing to text (getTextBounds)
@@ -323,7 +387,10 @@ void InkHUD::Applet::printAt(int16_t x, int16_t y, const char *text, HorizontalA
     }
 
     setCursor(cursorX, cursorY);
-    print(text);
+    if (plainAscii)
+        print(text);
+    else
+        drawMixed(text);
 }
 
 // Print text, specifying the position of any edge / corner of the textbox
@@ -347,6 +414,113 @@ InkHUD::AppletFont InkHUD::Applet::getFont()
     return currentFont;
 }
 
+// Set the color subsequent drawing will use
+// Shadows GFX::setTextColor: also remembers the color locally, since GFX doesn't expose a getter,
+// and drawCJKGlyph (which bypasses GFX's own char rendering) needs to know it
+void InkHUD::Applet::setTextColor(uint16_t color)
+{
+    GFX::setTextColor(color);
+    textColor = color;
+}
+
+// Width in px of a run of mixed-script text: ASCII / WIN125x glyphs from the current AppletFont,
+// plus Hangul / CJK glyphs from Applet::cjkFont, wherever the current font can't represent a codepoint.
+// Doesn't draw anything, or move the cursor. Used by printAt/printWrapped to measure non-ASCII text,
+// in place of AdafruitGFX's own getTextBounds (which can't measure the CJK bitmap glyphs).
+uint16_t InkHUD::Applet::measureMixed(const std::string &text)
+{
+    uint16_t totalWidth = 0;
+    size_t i = 0;
+    while (i < text.length()) {
+        std::string raw;
+        uint32_t cp = stepUtf8(text, i, raw);
+
+        int16_t glyphIndex = (cp > 0x7F && cjkFont) ? NicheGraphics::cjkLookup(cjkFont, cp) : -1;
+        if (glyphIndex >= 0) {
+            uint8_t advance = pgm_read_byte(&cjkFont->glyphs[glyphIndex].xAdvance);
+            totalWidth += static_cast<uint16_t>(advance * cjkScale() + 0.5f);
+            continue;
+        }
+
+        char encoded = (raw.length() == 1) ? raw.at(0) : getFont().encodeCodepoint(raw);
+        const GFXfont *f = currentFont.gfxFont;
+        uint8_t idx = static_cast<uint8_t>(encoded);
+        if (f && idx >= f->first && idx <= f->last)
+            totalWidth += f->glyph[idx - f->first].xAdvance;
+    }
+    return totalWidth;
+}
+
+// Draws a run of mixed-script text at the current cursor (see measureMixed). Advances the cursor.
+void InkHUD::Applet::drawMixed(const std::string &text)
+{
+    size_t i = 0;
+    while (i < text.length()) {
+        std::string raw;
+        uint32_t cp = stepUtf8(text, i, raw);
+
+        int16_t glyphIndex = (cp > 0x7F && cjkFont) ? NicheGraphics::cjkLookup(cjkFont, cp) : -1;
+        if (glyphIndex >= 0) {
+            drawCJKGlyph(glyphIndex);
+            continue;
+        }
+
+        char encoded = (raw.length() == 1) ? raw.at(0) : getFont().encodeCodepoint(raw);
+        write(static_cast<uint8_t>(encoded)); // Existing AdafruitGFX draw, using the currently set GFXfont
+    }
+}
+
+// How much to scale cjkFont's fixed 18px glyphs, to roughly match the visual size of the currently active
+// AppletFont (fontSmall/fontMedium/fontLarge all share the one Korean bitmap font, at different sizes).
+// Without this, Hangul would always render at a fixed size regardless of which font is selected,
+// looking mismatched against small or large Latin text drawn alongside it.
+float InkHUD::Applet::cjkScale()
+{
+    if (!cjkFont || cjkFont->height == 0)
+        return 1.0f;
+    return static_cast<float>(currentFont.lineHeight()) / cjkFont->height;
+}
+
+// Unpack and blit one glyph from Applet::cjkFont at the current cursor, scaled to suit the current AppletFont
+// Advances the cursor by the glyph's (scaled) xAdvance, same convention as AdafruitGFX's own char drawing
+void InkHUD::Applet::drawCJKGlyph(int16_t glyphIndex)
+{
+    uint32_t bitmapOffset = pgm_read_dword(&cjkFont->glyphs[glyphIndex].bitmapOffset);
+    uint8_t rawAdvance = pgm_read_byte(&cjkFont->glyphs[glyphIndex].xAdvance);
+    const uint8_t srcW = cjkFont->width;
+    const uint8_t srcH = cjkFont->height;
+    const float scale = cjkScale();
+
+    uint8_t dstW = static_cast<uint8_t>(srcW * scale + 0.5f);
+    uint8_t dstH = static_cast<uint8_t>(srcH * scale + 0.5f);
+    if (dstW == 0)
+        dstW = 1;
+    if (dstH == 0)
+        dstH = 1;
+
+    int16_t gx = getCursorX();
+    int16_t gy = getCursorY() + static_cast<int16_t>(cjkFont->yOffset * scale); // yOffset is negative (above baseline)
+
+    for (uint8_t dy = 0; dy < dstH; dy++) {
+        uint8_t sy = static_cast<uint8_t>(dy / scale);
+        if (sy >= srcH)
+            sy = srcH - 1;
+        for (uint8_t dx = 0; dx < dstW; dx++) {
+            uint8_t sx = static_cast<uint8_t>(dx / scale);
+            if (sx >= srcW)
+                sx = srcW - 1;
+
+            uint32_t bitIndex = static_cast<uint32_t>(sy) * srcW + sx;
+            uint32_t byteIdx = bitmapOffset + (bitIndex >> 3);
+            uint8_t bitPos = 7 - (bitIndex & 7);
+            if (pgm_read_byte(&cjkFont->bitmap[byteIdx]) & (1 << bitPos))
+                drawPixel(gx + dx, gy + dy, textColor); // Honors Applet::setCrop, via drawPixel
+        }
+    }
+
+    setCursor(gx + static_cast<int16_t>(rawAdvance * scale + 0.5f), getCursorY());
+}
+
 // Parse any text which might have "special characters"
 // Re-encodes UTF-8 characters to match our 8-bit encoded fonts
 std::string InkHUD::Applet::parse(const std::string &text)
@@ -355,18 +529,16 @@ std::string InkHUD::Applet::parse(const std::string &text)
 }
 
 // Get the best version of a node's short name available to us
-// Parses any non-ascii chars
 // Swaps for last-four of node-id if the real short name is unknown or can't be rendered (emoji)
+// Returns raw UTF-8 (not pre-parsed): printAt/printWrapped decide how to encode each character themselves,
+// which is what lets a Hangul/CJK short name render via Applet::cjkFont instead of falling back to hex here
 std::string InkHUD::Applet::parseShortName(meshtastic_NodeInfoLite *node)
 {
     assert(node);
 
     // Use the true shortname if known, and doesn't contain any unprintable characters (emoji, etc.)
-    if (node->has_user) {
-        std::string parsed = parse(node->user.short_name);
-        if (isPrintable(parsed))
-            return parsed;
-    }
+    if (node->has_user && isPrintable(node->user.short_name))
+        return node->user.short_name;
 
     // Otherwise, use the "last 4" of node id
     // - if short name unknown, or
@@ -375,12 +547,22 @@ std::string InkHUD::Applet::parseShortName(meshtastic_NodeInfoLite *node)
     return nodeID.substr(nodeID.length() - 4);
 }
 
-// Determine if all characters of a string are printable using the current font
+// Determine if all characters of a string are printable, using the current font or cjkFont
 bool InkHUD::Applet::isPrintable(const std::string &text)
 {
-    // Scan for SUB (0x1A), which is the value assigned by AppletFont::applyEncoding if a unicode character is not handled
-    for (const char &c : text) {
-        if (c == '\x1A')
+    size_t i = 0;
+    while (i < text.length()) {
+        std::string raw;
+        uint32_t cp = stepUtf8(text, i, raw);
+
+        // Representable via the secondary CJK bitmap font (e.g. Hangul)? Fine.
+        if (cp > 0x7F && cjkFont && NicheGraphics::cjkLookup(cjkFont, cp) >= 0)
+            continue;
+
+        // Otherwise, must be handled by the current AppletFont
+        // SUB (0x1A) is the value AppletFont::applyEncoding/encodeCodepoint returns for anything it can't handle
+        char encoded = (raw.length() == 1) ? raw.at(0) : getFont().encodeCodepoint(raw);
+        if (encoded == '\x1A')
             return false;
     }
 
@@ -389,9 +571,14 @@ bool InkHUD::Applet::isPrintable(const std::string &text)
 }
 
 // Gets rendered width of a string
-// Wrapper for getTextBounds
+// Wrapper for getTextBounds (or measureMixed, for text containing non-ASCII bytes)
 uint16_t InkHUD::Applet::getTextWidth(const char *text)
 {
+    for (const char *p = text; *p; p++) {
+        if (static_cast<uint8_t>(*p) >= 0x80)
+            return measureMixed(text);
+    }
+
     // We do still have to run getTextBounds to find the width
     int16_t textOffsetX, textOffsetY;
     uint16_t textWidth, textHeight;
@@ -478,48 +665,46 @@ void InkHUD::Applet::printWrapped(int16_t left, int16_t top, uint16_t width, con
                 word.pop_back();
 
             // Measure the word, in px
-            int16_t l, t;
-            uint16_t w, h;
-            getTextBounds(word.c_str(), getCursorX(), getCursorY(), &l, &t, &w, &h);
+            // Uses measureMixed rather than AdafruitGFX's own getTextBounds, so that words containing
+            // Hangul/CJK (rendered via Applet::cjkFont, not a GFXfont) are measured correctly too
+            int16_t l = getCursorX();
+            uint16_t w = measureMixed(word);
 
             // Word is short
             if (w < width) {
                 // Word fits on current line
                 if ((l + w + wSp) < left + width)
-                    print(word.c_str());
+                    drawMixed(word);
 
                 // Word doesn't fit on current line
                 else {
                     setCursor(left, getCursorY() + getFont().lineHeight()); // Newline
-                    print(word.c_str());
+                    drawMixed(word);
                 }
             }
 
             // Word is really long
             // (wider than applet)
             else {
-                // Horribly inefficient:
-                // Rather than working directly with the glyph sizes,
-                // we're going to run everything through getTextBounds as a c-string of length 1
-                // This is because AdafruitGFX has special internal handling for their legacy 6x8 font,
-                // which would be a pain to add manually here.
-                // These super-long strings probably don't come up often so we can maybe tolerate this.
+                // Walk the word one *codepoint* at a time (not one byte), so multi-byte UTF-8 characters
+                // (Hangul, accented Latin, etc.) aren't split apart by the newline check below
+                // These super-long strings probably don't come up often so we can maybe tolerate the overhead
 
                 // Todo: rewrite making use of AdafruitGFX native text wrapping
-                char cstr[] = {0, 0};
-                int16_t bx, by;
-                uint16_t bw, bh;
-                for (uint16_t c = 0; c < word.length(); c++) {
-                    // Shove next char into a c string
-                    cstr[0] = word[c];
-                    getTextBounds(cstr, getCursorX(), getCursorY(), &bx, &by, &bw, &bh);
+                size_t c = 0;
+                while (c < word.length()) {
+                    size_t charStart = c;
+                    std::string raw;
+                    stepUtf8(word, c, raw);
+                    std::string singleChar = word.substr(charStart, c - charStart);
+                    uint16_t charWidth = measureMixed(singleChar);
 
                     // Manual newline, if next character will spill beyond screen edge
-                    if ((bx + bw) > left + width)
+                    if ((getCursorX() + charWidth) > left + width)
                         setCursor(left, getCursorY() + getFont().lineHeight());
 
                     // Print next character
-                    print(word[c]);
+                    drawMixed(singleChar);
                 }
             }
         }

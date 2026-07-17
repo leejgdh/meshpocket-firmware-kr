@@ -73,7 +73,7 @@ void InkHUD::AllMessageApplet::onRender(bool full)
     if (sender && sender->has_user) {
         header += parseShortName(sender); // May be last-four of node if unprintable (emoji, etc)
         header += " (";
-        header += parse(sender->user.long_name);
+        header += sender->user.long_name;
         header += ")";
     } else
         header += hexifyNodeNum(message->sender);
@@ -95,8 +95,8 @@ void InkHUD::AllMessageApplet::onRender(bool full)
     // Print message text
     // ===================
 
-    // Parse any non-ascii chars in the message
-    std::string text = parse(message->text);
+    // Raw UTF-8: printWrapped decides how to encode each character (incl. Hangul/CJK, via Applet::cjkFont)
+    std::string text = message->text;
 
     // Extra gap below the header
     int16_t textTop = headerDivY + padDivH;

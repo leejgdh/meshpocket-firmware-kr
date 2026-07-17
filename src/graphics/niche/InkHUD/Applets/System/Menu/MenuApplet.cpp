@@ -1189,7 +1189,7 @@ void InkHUD::MenuApplet::showPage(MenuPage page)
             if (ch.role == meshtastic_Channel_Role_PRIMARY) {
                 label += "Primary";
             } else if (strlen(ch.settings.name) > 0) {
-                label += parse(ch.settings.name);
+                label += ch.settings.name;
             } else {
                 label += "Channel" + to_string(i + 1);
             }
@@ -1211,7 +1211,7 @@ void InkHUD::MenuApplet::showPage(MenuPage page)
 
         // Name (read-only)
         const char *name = strlen(ch.settings.name) > 0 ? ch.settings.name : "Unnamed";
-        nodeConfigLabels.emplace_back("Ch: " + parse(name));
+        nodeConfigLabels.emplace_back("Ch: " + std::string(name));
         items.push_back(MenuItem(nodeConfigLabels.back().c_str(), MenuAction::NO_ACTION, MenuPage::NODE_CONFIG_CHANNEL_DETAIL));
 
         // Uplink
@@ -1760,7 +1760,7 @@ void InkHUD::MenuApplet::populateSendPage()
         // Gather the information for this item
         CannedMessages::MessageItem messageItem;
         messageItem.rawText = cm.store->at(i);
-        messageItem.label = parse(messageItem.rawText);
+        messageItem.label = messageItem.rawText;
 
         // Store the item (until the menu closes)
         cm.messageItems.push_back(messageItem);
@@ -1797,7 +1797,7 @@ void InkHUD::MenuApplet::populateRecipientPage()
         if (channel.role == meshtastic_Channel_Role_PRIMARY)
             r.label += "Primary";
         else
-            r.label += parse(channel.settings.name);
+            r.label += channel.settings.name;
 
         // Add to the list of recipients
         cm.recipientItems.push_back(r);
@@ -1837,7 +1837,7 @@ void InkHUD::MenuApplet::populateRecipientPage()
             // Set a label for the menu item
             r.label = "DM: ";
             if (node->has_user)
-                r.label += parse(node->user.long_name);
+                r.label += node->user.long_name;
             else
                 r.label += hexifyNodeNum(node->num); // Unsure if it's possible to favorite a node without NodeInfo?
 

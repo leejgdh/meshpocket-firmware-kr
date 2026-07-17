@@ -177,10 +177,10 @@ void InkHUD::NodeListApplet::onRender(bool full)
             shortName = "?";
 
         // -- Longname --
-        // Parse special chars in long name
         // Use node id if unknown
+        // Raw UTF-8: printAt/printWrapped decide how to encode each character (incl. via Applet::cjkFont)
         if (node && node->has_user)
-            longName = parse(node->user.long_name); // Found in nodeDB
+            longName = node->user.long_name; // Found in nodeDB
         else {
             // Not found in nodeDB, show a hex nodeid instead
             longName = hexifyNodeNum(nodeNum);

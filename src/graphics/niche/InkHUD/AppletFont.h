@@ -40,6 +40,11 @@ class AppletFont
 
     std::string decodeUTF8(const std::string &encoded);
 
+    // Re-encode a single, already-isolated UTF-8 character to this font's 8-bit encoding.
+    // Returns SUB (0x1A) if the font has no glyph for it. Used by Applet's mixed-script text path,
+    // for codepoints which aren't handled by the secondary CJK bitmap font (Applet::cjkFont).
+    char encodeCodepoint(const std::string &utf8Char);
+
     const GFXfont *gfxFont = nullptr; // Default value: in-built AdafruitGFX font
 
   private:

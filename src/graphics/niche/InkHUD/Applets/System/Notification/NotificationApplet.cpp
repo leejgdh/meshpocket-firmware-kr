@@ -265,8 +265,8 @@ std::string InkHUD::NotificationApplet::getNotificationText(uint16_t widthAvaila
         }
     }
 
-    // Parse any non-ascii characters and return
-    return parse(text);
+    // Raw UTF-8: printAt/printWrapped decide how to encode each character themselves
+    return text;
 }
 
 #endif

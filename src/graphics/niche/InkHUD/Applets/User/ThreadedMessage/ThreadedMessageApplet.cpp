@@ -71,7 +71,7 @@ void InkHUD::ThreadedMessageApplet::onRender(bool full)
         // Grab data for message
         const MessageStore::Message &m = store->messages.at(i);
         bool outgoing = (m.sender == 0) || (m.sender == myNodeInfo.my_node_num); // Own NodeNum if canned message
-        std::string bodyText = parse(m.text);                                    // Parse any non-ascii chars in the message
+        std::string bodyText = m.text; // Raw UTF-8: printWrapped/printAt decide how to encode each character
 
         // Cache bottom Y of message text
         // - Used when drawing vertical line alongside
