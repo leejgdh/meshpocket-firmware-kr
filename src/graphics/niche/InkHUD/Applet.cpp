@@ -647,6 +647,12 @@ void InkHUD::Applet::printWrapped(int16_t left, int16_t top, uint16_t width, con
     // Works around issues where getTextDimensions() doesn't account for whitespace
     const uint8_t wSp = getFont().widthBetweenWords();
 
+    // Extra vertical gap between wrapped lines, on top of the font's own lineHeight()
+    // Latin glyphs have some built-in ascender/descender whitespace, but cjkFont's Hangul glyphs are
+    // scaled to fill the *entire* lineHeight() (see Applet::cjkScale) with no gap of their own, so
+    // without this, wrapped Hangul text reads as a visually cramped block with no line spacing at all
+    const uint8_t lineSpacing = getFont().lineHeight() * 0.2f;
+
     // Move through our text, character by character
     uint16_t wordStart = 0;
     for (uint16_t i = 0; i < text.length(); i++) {
@@ -678,7 +684,7 @@ void InkHUD::Applet::printWrapped(int16_t left, int16_t top, uint16_t width, con
 
                 // Word doesn't fit on current line
                 else {
-                    setCursor(left, getCursorY() + getFont().lineHeight()); // Newline
+                    setCursor(left, getCursorY() + getFont().lineHeight() + lineSpacing); // Newline
                     drawMixed(word);
                 }
             }
@@ -701,7 +707,7 @@ void InkHUD::Applet::printWrapped(int16_t left, int16_t top, uint16_t width, con
 
                     // Manual newline, if next character will spill beyond screen edge
                     if ((getCursorX() + charWidth) > left + width)
-                        setCursor(left, getCursorY() + getFont().lineHeight());
+                        setCursor(left, getCursorY() + getFont().lineHeight() + lineSpacing);
 
                     // Print next character
                     drawMixed(singleChar);
@@ -711,7 +717,7 @@ void InkHUD::Applet::printWrapped(int16_t left, int16_t top, uint16_t width, con
 
         // If word was terminated by a newline char, manually add the new line now
         if (text[i] == '\n') {
-            setCursor(left, getCursorY() + getFont().lineHeight()); // Manual newline
+            setCursor(left, getCursorY() + getFont().lineHeight() + lineSpacing); // Manual newline
             wordStart = i + 1; // New word begins after the newline. Otherwise print will add an *extra* line
         }
     }
